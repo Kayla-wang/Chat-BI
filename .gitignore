@@ -1,4 +1,7 @@
 node_modules/
 dist/
-data/chatbi.db
-data/*.db
+data/
+*.db
+*.db-shm
+*.db-wal
+.tmp-*/
