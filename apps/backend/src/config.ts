@@ -1,0 +1,7 @@
+export const config = {
+  dbPath: process.env.DB_PATH ?? "./data/chatbi.db",
+  ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
+  ollamaModel: process.env.OLLAMA_MODEL ?? "llama3.1",
+  queryTimeoutMs: Number(process.env.QUERY_TIMEOUT_MS ?? 5000),
+  rowLimit: Number(process.env.ROW_LIMIT ?? 1000),
+};
