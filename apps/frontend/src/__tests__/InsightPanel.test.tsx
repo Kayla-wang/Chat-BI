@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { InsightPanel } from "../components/InsightPanel";
+import { FactList } from "../components/FactList";
 import type { InsightFact } from "@chatbi/shared";
 
 const CURRENCY = { kind: "currency" as const, decimals: 0, unit: "元", scale: 1 as const };
@@ -35,5 +36,40 @@ describe("InsightPanel", () => {
   it("不传 format 时按普通数值渲染,不崩", () => {
     render(<InsightPanel text="x" facts={[{ kind: "total", series: "s", value: 1234 }]} />);
     expect(screen.getByText(/1,234/)).toBeTruthy();
+  });
+});
+
+describe("FactList", () => {
+  it("逐条渲染,summary 报告项数", () => {
+    render(<FactList facts={facts} format={CURRENCY} />);
+    expect(screen.getByText("计算依据（2 项）")).toBeTruthy();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+  });
+  it("默认收起", () => {
+    render(<FactList facts={facts} format={CURRENCY} />);
+    expect(screen.getByTestId("fact-list").hasAttribute("open")).toBe(false);
+  });
+  it("没有事实时不渲染", () => {
+    const { container } = render(<FactList facts={[]} format={CURRENCY} />);
+    expect(container.firstChild).toBeNull();
+  });
+  it("不传 format 时按普通数值渲染", () => {
+    render(<FactList facts={[{ kind: "total", series: "s", value: 1234 }]} />);
+    expect(screen.getByText(/1,234/)).toBeTruthy();
+  });
+});
+
+describe("InsightPanel 结构", () => {
+  it("标题是「洞察」", () => {
+    render(<InsightPanel text="x" facts={[]} format={CURRENCY} />);
+    expect(screen.getByRole("heading", { name: "洞察" })).toBeTruthy();
+  });
+  it("洞察区是独立的 region,便于屏幕阅读器跳转", () => {
+    render(<InsightPanel text="x" facts={[]} format={CURRENCY} />);
+    expect(screen.getByRole("region", { name: "洞察" })).toBeTruthy();
+  });
+  it("format 透传给 FactList", () => {
+    render(<InsightPanel text="x" facts={[{ kind: "total", series: "s", value: 128400 }]} format={CURRENCY} />);
+    expect(screen.getByText(/128,400 元/)).toBeTruthy();
   });
 });

@@ -1,0 +1,41 @@
+.panel {
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--accent-weak);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.title {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: var(--sp-2);
+}
+
+.text {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  white-space: pre-wrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.facts {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.factsSummary {
+  color: var(--text-muted);
+}
+.factsSummary:hover { color: var(--text); }
+
+.factItems {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-5);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}

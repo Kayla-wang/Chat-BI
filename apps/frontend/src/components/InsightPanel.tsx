@@ -1,23 +1,16 @@
 import type { InsightFact, ValueFormat } from "@chatbi/shared";
-import { renderFactsLines } from "@chatbi/shared";
-
-const DEFAULT_FORMAT: ValueFormat = { kind: "number", decimals: 0, scale: 1 };
+import { FactList } from "./FactList";
+import styles from "./InsightPanel.module.css";
 
 export function InsightPanel({ text, facts, format }: {
   text: string; facts: InsightFact[]; format?: ValueFormat;
 }) {
   if (!text && facts.length === 0) return null;
-  const lines = renderFactsLines(facts, format ?? DEFAULT_FORMAT).filter(Boolean);
   return (
-    <section>
-      <h3>洞察</h3>
-      <p data-testid="insight-text" style={{ whiteSpace: "pre-wrap" }}>{text}</p>
-      {lines.length > 0 && (
-        <details>
-          <summary>计算依据（{lines.length} 项）</summary>
-          <ul>{lines.map(l => <li key={l}>{l}</li>)}</ul>
-        </details>
-      )}
+    <section className={styles.panel} aria-label="洞察">
+      <h3 className={styles.title}>洞察</h3>
+      <p className={styles.text} data-testid="insight-text">{text}</p>
+      <FactList facts={facts} format={format} />
     </section>
   );
 }
