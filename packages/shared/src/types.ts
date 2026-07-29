@@ -1,0 +1,85 @@
+export type Row = Record<string, string | number | null>;
+
+export type ChartType = "bar" | "line" | "pie" | "table";
+export type ColumnRole = "temporal" | "categorical" | "numeric";
+export type TimeGrain = "day" | "week" | "month" | "quarter" | "year";
+export type StackMode = "none" | "normal" | "percent";
+
+export interface TableSchema {
+  tableName: string;
+  columns: { name: string; type: string; notNull: boolean; pk: boolean }[];
+  foreignKeys: { column: string; refTable: string; refColumn: string }[];
+}
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/** 数值展示口径。percent 的值已是百分数(41.2 表示 41.2%)。 */
+export interface ValueFormat {
+  kind: "number" | "currency" | "percent";
+  decimals: number;
+  unit?: string;
+  scale?: 1 | 10000 | 100000000;
+}
+
+export interface ChartSeries {
+  name: string;
+  field: string;
+  data: (number | null)[];
+  format: ValueFormat;
+}
+
+export interface ChartSpec {
+  chartType: ChartType;
+  stack: StackMode;
+  x: {
+    field: string;
+    role: "temporal" | "categorical";
+    labels: string[];
+    grain?: TimeGrain;
+  };
+  series: ChartSeries[];
+  notes: string[];
+}
+
+/** LLM 输出的图表语义提示——不可信,inferChartSpec 会逐字段校验。 */
+export interface ChartHint {
+  chartType: ChartType;
+  dimensions: string[];
+  measures: string[];
+  seriesBy?: string;
+  stack?: StackMode;
+}
+
+export type InsightFact =
+  | { kind: "trend"; series: string; dir: "up" | "down" | "flat"; pct: number; from: string; to: string }
+  | { kind: "trendAbs"; series: string; delta: number; from: string; to: string }
+  | { kind: "peak"; series: string; label: string; value: number }
+  | { kind: "trough"; series: string; label: string; value: number }
+  | { kind: "topShare"; series: string; label: string; pct: number }
+  | { kind: "concentration"; series: string; topN: number; pct: number }
+  | { kind: "total"; series: string; value: number }
+  | { kind: "seriesGap"; high: string; low: string; ratio: number }
+  | { kind: "truncated"; limit: number }
+  | { kind: "empty" };
+
+export interface DrillContext {
+  lastSql: string;
+  lastColumns: string[];
+}
+
+export interface ResultPayload {
+  spec: ChartSpec;
+  table: { columns: string[]; rows: Row[] };
+  queryIntent: string;
+  sql: string;
+}
+
+export type StreamEvent =
+  | { type: "result"; payload: ResultPayload }
+  | { type: "insightFacts"; facts: InsightFact[] }
+  | { type: "insightDelta"; text: string }
+  | { type: "done" }
+  | { type: "error"; message: string; raw?: string };
