@@ -6,13 +6,16 @@
   --surface: #ffffff;
   --surface-raised: #ffffff;
   --border: #e3e6eb;
-  --border-strong: #c9cfd8;
+  /* border-strong 是输入框/分段控件的可见边界,按 WCAG 1.4.11 需对底色 ≥ 3:1 */
+  --border-strong: #8a919e;
   --text: #1c2128;
   --text-muted: #6b7280;
 
   /* 语义色。注意:positive / negative 只用于状态提示,不用于表达数据涨跌。 */
   --accent: #0072b2;
   --accent-weak: #e6f1f9;
+  /* accent 填充面上的前景色。深色的 accent 是浅蓝,白字只有 2.3:1,所以两套值不同。 */
+  --on-accent: #ffffff;
   --positive: #1a7f52;
   --negative: #b42318;
   --warning: #b45309;
@@ -49,12 +52,13 @@
     --surface: #1b1f26;
     --surface-raised: #22272f;
     --border: #2c333d;
-    --border-strong: #3d4653;
+    --border-strong: #5f6b7d;
     --text: #e6e9ee;
     --text-muted: #9aa4b2;
 
     --accent: #56b4e9;
     --accent-weak: #1d2b36;
+    --on-accent: #0b1116;
     --positive: #4fbf8b;
     --negative: #f97066;
     --warning: #f5a524;

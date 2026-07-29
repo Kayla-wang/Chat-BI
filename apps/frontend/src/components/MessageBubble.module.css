@@ -10,7 +10,7 @@
   max-width: 80%;
   padding: var(--sp-2) var(--sp-4);
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   border-radius: var(--radius-md) var(--radius-md) var(--sp-1) var(--radius-md);
   white-space: pre-wrap;
 }

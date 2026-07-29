@@ -60,7 +60,7 @@
 .send {
   padding: var(--sp-2) var(--sp-5);
   background: var(--accent);
-  color: #ffffff;
+  color: var(--on-accent);
   border: none;
   border-radius: var(--radius-sm);
   font-weight: 600;
