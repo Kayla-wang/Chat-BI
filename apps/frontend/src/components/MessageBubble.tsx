@@ -1,5 +1,6 @@
 import type { InsightFact, ResultPayload } from "@chatbi/shared";
 import { ResultCard } from "./ResultCard";
+import styles from "./MessageBubble.module.css";
 
 export interface Message {
   id: string;
@@ -12,20 +13,18 @@ export interface Message {
 }
 
 export function MessageBubble({ message }: { message: Message }) {
+  if (message.role === "user") {
+    return (
+      <div className={styles.row}>
+        <div className={styles.user}>{message.text}</div>
+      </div>
+    );
+  }
+
   return (
-    <div style={{
-      margin: "8px 0",
-      alignSelf: message.role === "user" ? "flex-end" : "flex-start",
-      maxWidth: "80%",
-    }}>
-      {message.payload && (
-        <div style={{ whiteSpace: "pre-wrap" }}>{message.payload.queryIntent}</div>
-      )}
-      {message.text && (
-        <div style={{ fontWeight: message.role === "user" ? 600 : 400, whiteSpace: "pre-wrap" }}>
-          {message.text}
-        </div>
-      )}
+    <div className={`${styles.row} ${styles.assistant}`}>
+      {message.payload && <div className={styles.intent}>{message.payload.queryIntent}</div>}
+      {message.text && <div className={styles.error} role="alert">{message.text}</div>}
       {message.payload && (
         <ResultCard
           payload={message.payload}

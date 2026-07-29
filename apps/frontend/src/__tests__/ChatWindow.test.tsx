@@ -146,3 +146,25 @@ describe("ChatWindow 多轮与下钻", () => {
     expect(calls).toHaveLength(1);
   });
 });
+
+describe("ChatWindow 空状态", () => {
+  it("没有消息时显示引导与示例问题", () => {
+    render(<ChatWindow />);
+    expect(screen.getByTestId("empty-state")).toBeTruthy();
+    expect(screen.getByText(/按月统计订单金额/)).toBeTruthy();
+  });
+
+  it("提问后空状态消失", async () => {
+    render(<ChatWindow />);
+    ask("q");
+    await waitFor(() => expect(screen.queryByTestId("empty-state")).toBeNull());
+  });
+
+  it("错误消息带 alert 语义", async () => {
+    render(<ChatWindow />);
+    ask("q");
+    await waitFor(() => expect(calls).toHaveLength(1));
+    drive(0, [{ type: "error", message: "Ollama 未运行" }]);
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Ollama 未运行"));
+  });
+});

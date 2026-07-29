@@ -2,6 +2,13 @@ import { useState } from "react";
 import type { ChatTurn, DrillContext, StreamEvent } from "@chatbi/shared";
 import { streamChat } from "../api";
 import { MessageBubble, type Message } from "./MessageBubble";
+import styles from "./ChatWindow.module.css";
+
+const EXAMPLES = [
+  "按月统计订单金额",
+  "各产品类别销售额占比",
+  "按月看各区域销售额",
+];
 
 let seq = 0;
 const nextId = () => `m${++seq}`;
@@ -56,19 +63,29 @@ export function ChatWindow() {
   const hasContext = messages.some(m => m.payload);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", maxWidth: 900, margin: "0 auto" }}>
-      <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
-        {messages.map(m => <MessageBubble key={m.id} message={m} />)}
+    <div className={styles.window}>
+      <div className={styles.stream}>
+        {messages.length === 0 ? (
+          <div className={styles.empty} data-testid="empty-state">
+            <p className={styles.emptyTitle}>用中文问一个关于订单数据的问题</p>
+            <ul className={styles.examples}>
+              {EXAMPLES.map(e => <li key={e}>「{e}」</li>)}
+            </ul>
+          </div>
+        ) : (
+          messages.map(m => <MessageBubble key={m.id} message={m} />)
+        )}
       </div>
-      <div style={{ display: "flex", gap: 8, padding: 8 }}>
+
+      <div className={styles.composer}>
         <input
+          className={styles.input}
           value={input}
           placeholder={hasContext ? "继续追问，例如「只看华东区」" : "输入问题，例如「按月统计订单金额」"}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => e.key === "Enter" && send()}
-          style={{ flex: 1 }}
         />
-        <button onClick={send} disabled={busy}>发送</button>
+        <button className={styles.send} onClick={send} disabled={busy}>发送</button>
       </div>
     </div>
   );
