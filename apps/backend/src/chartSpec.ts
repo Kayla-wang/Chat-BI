@@ -21,7 +21,7 @@ const num = (v: unknown) => {
 export function inferFormat(field: string, values: (number | null)[]): ValueFormat {
   if (PERCENT_NAME.test(field)) return { kind: "percent", decimals: 1, scale: 1 };
   const kind = CURRENCY_NAME.test(field) ? "currency" : "number";
-  const max = values.reduce((a, v) => Math.max(a, v === null ? 0 : Math.abs(v)), 0);
+  const max = values.reduce<number>((a, v) => Math.max(a, v === null ? 0 : Math.abs(v)), 0);
   const scale: 1 | 10000 | 100000000 = max >= 1e8 ? 100000000 : max >= 1e4 ? 10000 : 1;
   return {
     kind, scale, decimals: scale > 1 ? 2 : 0,
