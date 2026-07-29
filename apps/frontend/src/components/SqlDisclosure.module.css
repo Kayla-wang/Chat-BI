@@ -1,0 +1,23 @@
+.wrap {
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.summary {
+  color: var(--text-muted);
+  padding: var(--sp-1) 0;
+}
+.summary:hover { color: var(--text); }
+
+.code {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-3);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
