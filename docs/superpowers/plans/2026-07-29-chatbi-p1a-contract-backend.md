@@ -39,17 +39,19 @@ spec 第 3 节写的是 `computeFacts(rows, spec)`。实现改为 **`computeFact
 
 ```
 packages/shared/src/
-├─ index.ts          # 修改:ChartSpec / ChartHint / InsightFact / DrillContext
+├─ types.ts          # 新增:ChartSpec / ChartHint / InsightFact / DrillContext
 │                    #       ResultPayload / StreamEvent / ValueFormat / ChartSeries
-├─ format.ts         # 新增:formatValue / formatTimeLabel  纯函数,无依赖
-└─ renderer.ts       # 新增:specToEchartsOption  唯一的 ECharts 生成实现
+├─ format.ts         # 新增:formatValue / formatTimeLabel  纯函数
+├─ renderer.ts       # 新增:specToEchartsOption  唯一的 ECharts 生成实现
+├─ facts.ts          # 新增:renderFactsLines / renderFactsTemplate  前后端共用的事实措辞
+└─ index.ts          # 修改:改成纯 barrel,re-export 上面四个
 
 apps/backend/src/
 ├─ columnTypes.ts    # 新增:列角色嗅探 detectRole / detectColumnRoles / parseTemporal
 ├─ timeAxis.ts       # 新增:inferGrain / toTickKey / enumerateTicks / fillGaps
 ├─ pivot.ts          # 新增:pivotSeries  按维度拆系列
 ├─ chartSpec.ts      # 新增:inferChartSpec / inferFormat  编排上面三者(替换 chartAssembler)
-├─ facts.ts          # 新增:computeFacts / renderFactsTemplate
+├─ facts.ts          # 新增:computeFacts,并 re-export shared 的两个渲染函数
 ├─ insightWriter.ts  # 新增:writeInsight  第二轮 LLM + 超时降级
 ├─ sqlGuard.ts       # 重写:AST 校验 + 加固正则回退
 ├─ dbClient.ts       # 修改:读写连接拆分、runQuery 返回 truncated
