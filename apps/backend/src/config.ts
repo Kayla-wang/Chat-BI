@@ -4,4 +4,5 @@ export const config = {
   ollamaModel: process.env.OLLAMA_MODEL ?? "llama3.1",
   queryTimeoutMs: Number(process.env.QUERY_TIMEOUT_MS ?? 5000),
   rowLimit: Number(process.env.ROW_LIMIT ?? 1000),
+  insightTimeoutMs: Number(process.env.INSIGHT_TIMEOUT_MS ?? 8000),
 };
