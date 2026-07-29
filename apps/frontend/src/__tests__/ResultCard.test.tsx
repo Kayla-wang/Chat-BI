@@ -40,21 +40,21 @@ describe("ResultCard 表格与切换", () => {
 
   it("4 个图表类型按钮,后端建议的那个高亮", () => {
     render(<ResultCard payload={payload()} insight="" facts={[]} />);
-    expect(screen.getByRole("button", { name: /bar/i }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: /pie/i }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "柱状" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "饼图" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("切到 pie 后高亮转移,表格仍在", () => {
     render(<ResultCard payload={payload()} insight="" facts={[]} />);
-    fireEvent.click(screen.getByRole("button", { name: /pie/i }));
-    expect(screen.getByRole("button", { name: /pie/i }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "饼图" }));
+    expect(screen.getByRole("button", { name: "饼图" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("华东")).toBeTruthy();
   });
 
   it("切到 table 时图表容器消失", () => {
     render(<ResultCard payload={payload()} insight="" facts={[]} />);
     expect(screen.queryByTestId("chart")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /table/i }));
+    fireEvent.click(screen.getByRole("button", { name: "表格" }));
     expect(screen.queryByTestId("chart")).toBeNull();
   });
 
@@ -63,7 +63,7 @@ describe("ResultCard 表格与切换", () => {
     p.spec.chartType = "table";
     render(<ResultCard payload={p} insight="" facts={[]} />);
     expect(screen.queryByTestId("chart")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /bar/i }));
+    fireEvent.click(screen.getByRole("button", { name: "柱状" }));
     expect(screen.queryByTestId("chart")).toBeTruthy();
   });
 });
@@ -94,5 +94,16 @@ describe("ResultCard notes / SQL / 大表格", () => {
     render(<ResultCard payload={payload()} insight="华东区领先。" facts={facts} />);
     expect(screen.getByTestId("insight-text").textContent).toBe("华东区领先。");
     expect(screen.getByText(/计算依据/)).toBeTruthy();
+  });
+});
+
+describe("ResultCard 组合子组件", () => {
+  it("表格由 DataTable 渲染", () => {
+    render(<ResultCard payload={payload()} insight="" facts={[]} />);
+    expect(screen.getByTestId("data-table")).toBeTruthy();
+  });
+  it("SQL 由 SqlDisclosure 渲染", () => {
+    render(<ResultCard payload={payload()} insight="" facts={[]} />);
+    expect(screen.getByTestId("sql-disclosure")).toBeTruthy();
   });
 });
