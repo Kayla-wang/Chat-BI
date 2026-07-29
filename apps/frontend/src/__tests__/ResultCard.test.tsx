@@ -1,7 +1,14 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ResultCard } from "../components/ResultCard";
 import type { ResultPayload, InsightFact } from "@chatbi/shared";
+
+// jsdom 没有 canvas,真实 ECharts 的动画帧会在组件 try/catch 之外抛异步异常。
+// 按计划的口径「不测 ECharts 绘制,只测传给它的 option」——option 由
+// packages/shared 的 renderer 测试覆盖,这里只需要一个空实现。
+vi.mock("echarts", () => ({
+  init: () => ({ setOption: () => {}, dispose: () => {}, resize: () => {} }),
+}));
 
 const CURRENCY = { kind: "currency" as const, decimals: 0, unit: "元", scale: 1 as const };
 

@@ -5,6 +5,10 @@ import { streamChat } from "../api";
 import type { ResultPayload, StreamEvent } from "@chatbi/shared";
 
 vi.mock("../api", () => ({ streamChat: vi.fn() }));
+// 同 ResultCard.test.tsx:jsdom 无 canvas,真实 ECharts 会抛异步异常。
+vi.mock("echarts", () => ({
+  init: () => ({ setOption: () => {}, dispose: () => {}, resize: () => {} }),
+}));
 
 /** 每次调用记录 opts,并把 onEvent 存下来由测试驱动。 */
 let calls: any[] = [];
