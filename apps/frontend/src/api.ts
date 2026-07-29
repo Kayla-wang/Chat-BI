@@ -1,7 +1,8 @@
-import type { ChatTurn, StreamEvent } from "@chatbi/shared";
+import type { ChatTurn, DrillContext, StreamEvent } from "@chatbi/shared";
 
 export function streamChat(opts: {
-  question: string; history: ChatTurn[]; onEvent: (e: StreamEvent) => void;
+  question: string; history: ChatTurn[]; context?: DrillContext;
+  onEvent: (e: StreamEvent) => void;
   endpoint?: string;
 }): Promise<void> {
   const url = opts.endpoint ?? "/api/chat";
@@ -11,7 +12,11 @@ export function streamChat(opts: {
       res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: opts.question, history: opts.history }),
+        body: JSON.stringify({
+          question: opts.question,
+          history: opts.history,
+          ...(opts.context ? { context: opts.context } : {}),
+        }),
       });
     } catch (e) {
       opts.onEvent({ type: "error", message: `网络错误:${(e as Error).message}` });
