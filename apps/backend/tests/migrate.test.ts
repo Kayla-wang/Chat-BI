@@ -17,11 +17,11 @@ describe("migrate", () => {
   });
   it("seeds sample rows", () => {
     migrate(db);
-    expect(db.runQuery("SELECT COUNT(*) n FROM customers")[0].n).toBeGreaterThan(0);
-    expect(db.runQuery("SELECT COUNT(*) n FROM orders")[0].n).toBeGreaterThan(0);
+    expect(db.runQuery("SELECT COUNT(*) n FROM customers", 10).rows[0].n).toBeGreaterThan(0);
+    expect(db.runQuery("SELECT COUNT(*) n FROM orders", 10).rows[0].n).toBeGreaterThan(0);
   });
   it("is idempotent (safe to run twice)", () => {
     migrate(db); migrate(db);
-    expect(db.runQuery("SELECT COUNT(*) n FROM products")[0].n).toBeGreaterThan(0);
+    expect(db.runQuery("SELECT COUNT(*) n FROM products", 10).rows[0].n).toBeGreaterThan(0);
   });
 });

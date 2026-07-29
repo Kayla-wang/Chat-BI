@@ -6,13 +6,20 @@ import type { TableSchema, Row } from "@chatbi/shared";
 
 export class DbClient {
   private db: DB;
-  constructor(private path: string) {
-    mkdirSync(dirname(path), { recursive: true });
-    this.db = new Database(path);
-    this.db.pragma("journal_mode = WAL");
+  private readonlyMode: boolean;
+
+  constructor(path: string, opts: { readonly?: boolean } = {}) {
+    this.readonlyMode = opts.readonly ?? false;
+    if (!this.readonlyMode) mkdirSync(dirname(path), { recursive: true });
+    this.db = new Database(path, { readonly: this.readonlyMode });
+    if (!this.readonlyMode) this.db.pragma("journal_mode = WAL");
   }
-  /** 仅用于测试/迁移:直接执行任意 SQL(不含只读保护)。*/
-  execRaw(sql: string) { this.db.exec(sql); }
+
+  /** 仅可写连接可用:迁移与测试建表。只读连接上调用直接抛错。 */
+  execRaw(sql: string): void {
+    if (this.readonlyMode) throw new Error("connection is readonly: execRaw not allowed");
+    this.db.exec(sql);
+  }
 
   getSchema(): TableSchema[] {
     const tables = this.db.prepare(
@@ -27,20 +34,21 @@ export class DbClient {
           name: c.name, type: c.type,
           notNull: Boolean(c.notnull), pk: Boolean(c.pk),
         })),
-        foreignKeys: fks.map(f => ({
-          column: f.from, refTable: f.table, refColumn: f.to,
-        })),
+        foreignKeys: fks.map(f => ({ column: f.from, refTable: f.table, refColumn: f.to })),
       };
     });
   }
 
-  runQuery(sql: string): Row[] {
-    // better-sqlite3 无原生只读开关:此处加一道 SELECT / WITH...SELECT 前缀防御
-    const isReadOnly = /^\s*(with\b[\s\S]*\bselect|select)\b/i.test(sql);
-    if (!isReadOnly) throw new Error("read-only check failed: not a SELECT or WITH...SELECT statement");
+  /**
+   * 调用方应已用 enforceLimit(sql, limit + 1) 注入过上限。
+   * 这里只负责切回 limit 行,并报告是否多出来过(= 真的被截断)。
+   */
+  runQuery(sql: string, limit: number): { rows: Row[]; truncated: boolean } {
     const stmt = this.db.prepare(sql);
-    return stmt.all() as Row[];
+    if (!stmt.reader) throw new Error("statement does not return rows");
+    const all = stmt.all() as Row[];
+    return { rows: all.slice(0, limit), truncated: all.length > limit };
   }
 
-  close() { this.db.close(); }
+  close(): void { this.db.close(); }
 }
