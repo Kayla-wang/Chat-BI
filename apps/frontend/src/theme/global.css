@@ -1,0 +1,38 @@
+@import "./tokens.css";
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* BI 界面的数字必须等宽对齐:表格列、坐标轴、洞察里的数值 */
+table, pre, code, [data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+
+h1, h2, h3 { margin: 0; line-height: var(--lh-tight); font-weight: 600; }
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+input { font: inherit; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+summary { cursor: pointer; }

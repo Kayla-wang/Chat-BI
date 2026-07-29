@@ -57,7 +57,6 @@ export function ChatWindow() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", maxWidth: 900, margin: "0 auto" }}>
-      <h1>Chat-BI</h1>
       <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
         {messages.map(m => <MessageBubble key={m.id} message={m} />)}
       </div>

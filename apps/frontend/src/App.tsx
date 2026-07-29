@@ -1,2 +1,4 @@
+import { AppShell } from "./components/AppShell";
 import { ChatWindow } from "./components/ChatWindow";
-export function App() { return <ChatWindow />; }
+
+export const App = () => <AppShell><ChatWindow /></AppShell>;
