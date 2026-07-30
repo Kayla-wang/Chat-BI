@@ -32,7 +32,7 @@ export function startServer() {
   const app = express();
   app.use(express.json());
   app.use("/api/chat", createChatRouter(deps));
-  app.listen(5174, "localhost", () => console.log("backend on http://localhost:5174"));
+  app.listen(config.port, "localhost", () => console.log(`backend on http://localhost:${config.port}`));
 }
 
 /** 直接执行本文件时启动(跨平台:比较规范化的 file URL,Windows 下同样成立)。*/

@@ -1,4 +1,5 @@
 export const config = {
+  port: Number(process.env.PORT ?? 5174),
   dbPath: process.env.DB_PATH ?? "./data/chatbi.db",
   ollamaUrl: process.env.OLLAMA_URL ?? "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL ?? "llama3.1",
