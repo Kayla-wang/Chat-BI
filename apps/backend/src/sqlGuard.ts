@@ -1,4 +1,8 @@
-import { Parser } from "node-sql-parser";
+// node-sql-parser 是纯 CJS(package.json 无 exports 字段),Node 的 ESM 静态分析
+// 取不到具名导出,`import { Parser }` 在真实启动时抛 SyntaxError;测试里走 Vite
+// 的 interop 反而能过。只能默认导入再取属性。
+import sqlParser from "node-sql-parser";
+const { Parser } = sqlParser;
 
 const FORBIDDEN = /\b(insert|update|delete|drop|create|alter|attach|detach|pragma|vacuum|reindex|replace|truncate)\b/i;
 const SELECT_HEAD = /^\s*(with\b[\s\S]*\bselect|select)\b/i;
