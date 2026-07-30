@@ -38,10 +38,13 @@
 ## 测试
 
 ```bash
+npx vitest run                         # 全仓(推荐,复用各工作区自己的配置)
 npx vitest --root apps/backend run     # 后端
 npx vitest --root apps/frontend run    # 前端
 npx vitest --root packages/shared run  # 共享类型
 ```
+
+Windows 下偶发过 `No test suite found in file ...`(测试文件被收集到但报 0 个测试):vitest 1.6 在 worker 收集阶段的 flake,不是代码问题,原命令重跑一次即可。
 
 ## 手动验收清单
 
