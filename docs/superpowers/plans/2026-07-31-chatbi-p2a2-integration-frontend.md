@@ -840,6 +840,19 @@ git commit -m "feat(shared,backend): data source API contract types and config i
 
 ---
 
+> **本计划到此为止:Task 5–9 从未写出来。** 下面五个占位符是空的,需要回到
+> `superpowers:writing-plans` 补完(内容按设计 spec 第 6–9 节与第 12 节):chat 路由的
+> `dataSourceId`、8 个数据源端点、`server.ts` 接 registry、前端 react-router + 顶栏数据源
+> 选择器 + `/datasources` 管理页、切源清 `DrillContext`。
+>
+> ## Task 1–4 实施期的偏差记录(2026-07-31 执行时补)
+>
+> - **Task 1 一提交就会让 3 个文件变红**,不只计划里写的 `chat.route.test.ts`:`validate` 变成必传 `dialect` 后,`chatService.test.ts` 与 `acceptance.pipeline.test.ts` 也会在运行时炸(`dialect.kind` 读到 undefined)。计划 Task 3 Step 6 只预告了 `chat.route` 一个。
+> - **`acceptance.pipeline.test.ts` / `chat.route.test.ts` / `server.ts` 的 deps 已就地改成异步 + 带 `dialect`**,否则全套回不了绿。`server.ts` 仍然是 P1 的单一 SQLite 连接 + `SQLITE_DIALECT`,**没有**接 registry——那是缺失的 Task 5 的事,已在代码里留注释说明。
+> - **Task 3 里那条「SQL 执行报错重试一次后报错」的断言按计划要求做了前提改造**:假 db 改抛 `DsError("SCHEMA_STALE", …, "no such column: bad")`。用户可见消息现在是中文,所以原来的 `/no such column/` 断言挪到「重试 prompt 里含原生原文」上——原意(失败原因要到达模型)完整保留。
+> - **`vitest.config.ts` 加了 `pool: "forks"`,这是修 bug 不是偏好**:`better-sqlite3` 的原生插件在 4 个以上 vitest worker **线程**里同时加载时,进程退出阶段段错误(exit 139,测试全过但 summary 打不完),5 次里崩 2 次。P2a 把碰 better-sqlite3 的测试文件从 3 个涨到 7 个,越过了阈值。改子进程池后连跑 5 次全净。
+> - **`configInput.test.ts` 是 18 个测试**,计划里写的 19 个是数错了(断言条数没变)。
+
 <!--TASK5-->
 
 ---
