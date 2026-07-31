@@ -2,17 +2,21 @@ import type {
   ChartHint, ChatTurn, DrillContext, Row, StreamEvent, TableSchema, ValueFormat,
 } from "@chatbi/shared";
 import { buildPrompt, buildRetryPrompt, buildInsightPrompt } from "./promptBuilder";
-import { validate, enforceLimit, wrapTimeout } from "./sqlGuard";
+import { validate, enforceLimit } from "./sqlGuard";   // wrapTimeout 不再需要
 import { inferChartSpec } from "./chartSpec";
 import { computeFacts } from "./facts";
 import { writeInsight } from "./insightWriter";
 import { config } from "./config";
+import type { Dialect } from "./datasources/dialect";
+import { DsError, isRetryable } from "./datasources/errors";
 
 export interface ChatDeps {
   db: {
-    getSchema(): TableSchema[];
-    runQuery(sql: string, limit: number): { rows: Row[]; truncated: boolean };
+    getSchema(): Promise<TableSchema[]>;
+    /** 超时由 driver 下推到服务端,这里不再包 wrapTimeout。 */
+    runQuery(sql: string, limit: number): Promise<{ rows: Row[]; truncated: boolean }>;
   };
+  dialect: Dialect;
   llm: { chatStream(prompt: string): AsyncIterable<string> };
 }
 
@@ -48,9 +52,17 @@ function parseJson(raw: string): ParsedLLM | null {
 export async function* handleChat(opts: {
   question: string; history: ChatTurn[]; context?: DrillContext; deps: ChatDeps;
 }): AsyncIterable<StreamEvent> {
-  const schema = opts.deps.db.getSchema();
+  let schema: TableSchema[];
+  try {
+    schema = await opts.deps.db.getSchema();
+  } catch (e) {
+    // 连不上库就别去问模型了,省一次无用的推理。
+    yield { type: "error", message: toDsError(e).message };
+    return;
+  }
   let prompt = buildPrompt({
-    question: opts.question, schema, history: opts.history, context: opts.context,
+    question: opts.question, schema, history: opts.history,
+    dialect: opts.deps.dialect, context: opts.context,
   });
 
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -62,7 +74,7 @@ export async function* handleChat(opts: {
       return;
     }
 
-    const v = validate(parsed.sql);
+    const v = validate(parsed.sql, opts.deps.dialect);
     if (!v.ok) {
       if (attempt === 0) {
         prompt = buildRetryPrompt(prompt, `SQL 校验失败:${v.reason},请重新生成只读 SELECT`);
@@ -75,16 +87,15 @@ export async function* handleChat(opts: {
     const probeSql = enforceLimit(v.sql, config.rowLimit + 1);
     let out: { rows: Row[]; truncated: boolean };
     try {
-      out = await wrapTimeout(
-        config.queryTimeoutMs,
-        Promise.resolve().then(() => opts.deps.db.runQuery(probeSql, config.rowLimit)),
-      );
+      out = await opts.deps.db.runQuery(probeSql, config.rowLimit);
     } catch (e) {
-      if (attempt === 0) {
-        prompt = buildRetryPrompt(prompt, `SQL 执行报错:${(e as Error).message},请修正 SQL`);
+      const err = toDsError(e);
+      // 只有与 SQL 内容相关的错误值得把原因喂回模型;连不上、认证失败、超时重试都是白等。
+      if (attempt === 0 && isRetryable(err.code)) {
+        prompt = buildRetryPrompt(prompt, `SQL 执行报错:${err.details ?? err.message},请修正 SQL`);
         continue;
       }
-      yield { type: "error", message: `SQL 执行失败:${(e as Error).message}` };
+      yield { type: "error", message: err.message };
       return;
     }
 
@@ -119,4 +130,11 @@ export async function* handleChat(opts: {
     yield { type: "done" };
     return;
   }
+}
+
+/** 驱动层的契约是一律抛 DsError;裸 Error 说明有 bug,按 UNKNOWN 处理且不重试。 */
+function toDsError(e: unknown): DsError {
+  return e instanceof DsError
+    ? e
+    : new DsError("UNKNOWN", `SQL 执行失败:${(e as Error).message}`, (e as Error).message);
 }
