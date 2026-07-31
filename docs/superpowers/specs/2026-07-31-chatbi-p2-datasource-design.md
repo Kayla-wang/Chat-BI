@@ -374,7 +374,7 @@ P2a 会破坏几个现有契约。全列在这里,方便实施时逐条改、逐
 | 3 | `sqlGuard.validate` | `validate(sql)`,内部硬编码 sqlite | `validate(sql, dialect)` | 所有 `sqlGuard` 测试要传 dialect;新增每方言的禁用词测试 |
 | 4 | `POST /api/chat` body | `{question, history, context?}` | 增 `dataSourceId: string`(必填) | 前端 `api.ts` 与后端路由;缺失时走 SSE `error` |
 | 5 | `ChatDeps` 组装位置 | `server.ts` 里建一个全局只读 `DbClient` | 每轮请求按 `dataSourceId` 从 registry 取 driver | `server.ts` 的 deps 从「一个 db」变成「一个 registry」 |
-| 6 | `columnTypes.ts` 的类型关键字表 | 只覆盖 SQLite 类型名 | 追加 MySQL / PG 的类型名 | `datetime`/`timestamptz`/`character varying`/`numeric`/`double precision`/`bigint` 等;判定仍是「类型名包含关键字」的现有策略 |
+| 6 | 结果集里**值的形态** | 只有 better-sqlite3 一种:日期是文本、数值是 JS number | driver 必须保证三种源一致 | **修正**:`columnTypes.ts` 是按**值**嗅探列角色的(`detectRole` 看 ISO 日期正则与 `Number()`),没有类型名关键字表,所以不需要改它——但 driver 必须把 MySQL 的 `DECIMAL`(默认给字符串)、`DATE`/`DATETIME`(默认给 `Date` 对象)与 PG 的 `numeric`/`int8`(默认给字符串)、`date`/`timestamp`(默认给 `Date` 对象)统一成「日期是文本、数值是 number」。这是驱动层的责任,不是 `columnTypes` 的 |
 | 7 | `DbClient` 的角色 | 通用 SQLite 客户端 | 拆成两个用途:`appDb/`(可写,元数据)与 `drivers/sqlite.ts`(只读,数据源) | 现有 `DbClient` 保留给 app.db,`execRaw` 的「只读连接禁用」保护继续有效 |
 
 第 4 条是破坏性的 API 变更。前后端同仓、单用户、无外部调用方,**直接改,不做兼容层**——留一个「`dataSourceId` 缺失时回落到内置源」的兼容分支,只会让「为什么问的是另一个库」变成难查的 bug。
@@ -543,7 +543,7 @@ apps/backend/src/
     chat.ts           改:取 dataSourceId → registry.get → 组装 deps
     datasources.ts    新:8 个端点
   sqlGuard.ts         改:validate(sql, dialect)
-  columnTypes.ts      改:类型关键字表扩充 MySQL / PG
+  columnTypes.ts      不改:角色按值嗅探,值的形态由 driver 统一(见第 6 节第 6 条)
   promptBuilder.ts    改:插入 dialect.promptNotes
   chatService.ts      改:await runQuery / getSchema;错误按 DsErrorCode 分类重试
   dbClient.ts         保留,现在只服务 app.db 与 sqlite driver
