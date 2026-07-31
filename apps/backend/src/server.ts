@@ -11,6 +11,7 @@ import { runMigrations } from "./appDb/migrations";
 import { loadKey } from "./appDb/secrets";
 import { ensureBuiltinDataSource } from "./appDb/bootstrap";
 import { createRegistry, type DataSourceRegistry } from "./datasources/registry";
+import { SQLITE_DIALECT } from "./datasources/dialect";
 
 /**
  * 启动期的准备工作,不监听端口——所以可以在测试里直接调。
@@ -54,11 +55,14 @@ export function startServer() {
   const db = new DbClient(config.dbPath, { readonly: true });
   try { db.getSchema(); } catch (e) { console.error("schema self-check failed:", e); process.exit(1); }
 
+  // deps 已按 driver 契约异步化;这里仍是 P1 的单一 SQLite 连接,
+  // 换成「按 dataSourceId 从 registry 取 driver」是 P2a-2 后半段的事。
   const deps = {
     db: {
-      getSchema: () => db.getSchema(),
-      runQuery: (sql: string, limit: number) => db.runQuery(sql, limit),
+      getSchema: async () => db.getSchema(),
+      runQuery: async (sql: string, limit: number) => db.runQuery(sql, limit),
     },
+    dialect: SQLITE_DIALECT,
     llm: new LlmClient(),
   };
   const server = express();

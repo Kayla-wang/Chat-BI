@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { DbClient } from "../src/dbClient";
 import { migrate } from "../src/migrate";
 import { handleChat } from "../src/chatService";
+import { SQLITE_DIALECT } from "../src/datasources/dialect";
 import type { ChartHint, StreamEvent } from "@chatbi/shared";
 
 const tmpDir = join(process.cwd(), ".tmp-acceptance");
@@ -29,10 +30,12 @@ async function ask(sql: string, hint: Partial<ChartHint>, explanation: string) {
     sql, explanation, chartType: "table", dimensions: [], measures: [], ...hint,
   });
   const deps = {
+    // chatService 的 deps 现在是异步的(driver 契约),这里把同步的 DbClient 包一层。
     db: {
-      getSchema: () => db.getSchema(),
-      runQuery: (s: string, limit: number) => db.runQuery(s, limit),
+      getSchema: async () => db.getSchema(),
+      runQuery: async (s: string, limit: number) => db.runQuery(s, limit),
     },
+    dialect: SQLITE_DIALECT,
     llm: {
       chatStream: async function* (prompt: string) {
         // 第一轮出 JSON,第二轮(洞察)出散文——用 prompt 里的标志区分。

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import express from "express";
 import request from "supertest";
 import { createChatRouter } from "../src/routes/chat";
+import { SQLITE_DIALECT } from "../src/datasources/dialect";
 import type { StreamEvent } from "@chatbi/shared";
 
 function readSse(text: string): StreamEvent[] {
@@ -20,7 +21,12 @@ const llmJson = JSON.stringify({
 
 function makeDeps(chatStream: (prompt: string) => AsyncIterable<string>) {
   return {
-    db: { getSchema: () => [], runQuery: () => ({ rows: [{ a: 1 }], truncated: false }) },
+    // deps 已异步化(driver 契约),假 db 也要 async。
+    db: {
+      getSchema: async () => [],
+      runQuery: async () => ({ rows: [{ a: 1 }], truncated: false }),
+    },
+    dialect: SQLITE_DIALECT,
     llm: { chatStream },
   };
 }
