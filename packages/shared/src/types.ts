@@ -96,3 +96,16 @@ export type DsConfig =
   | { kind: "sqlite"; path: string }
   | { kind: "mysql"; host: string; port: number; database: string; user: string; password: string; ssl: boolean }
   | { kind: "postgres"; host: string; port: number; database: string; user: string; password: string; ssl: boolean; schema?: string };
+
+/** 数据源相关的错误分类。前端按它决定要不要提示「刷新结构」「重新配置凭据」等。 */
+export type DsErrorCode =
+  | "CONNECTION_ERROR"
+  | "AUTH_ERROR"
+  | "DB_NOT_FOUND"     // 目标库/文件不存在
+  | "NOT_FOUND"        // 我们自己的数据源记录不存在
+  | "TIMEOUT"
+  | "SQL_ERROR"
+  | "SCHEMA_STALE"     // SQL_ERROR 的一种:表或列不存在,提示用户刷新结构
+  | "PERMISSION_ERROR"
+  | "DECRYPT_ERROR"
+  | "UNKNOWN";
