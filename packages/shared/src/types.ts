@@ -83,3 +83,16 @@ export type StreamEvent =
   | { type: "insightDelta"; text: string }
   | { type: "done" }
   | { type: "error"; message: string; raw?: string };
+
+export type DataSourceKind = "sqlite" | "mysql" | "postgres";
+
+export type WritePrivilege = "readonly" | "writable" | "unknown";
+
+/**
+ * 数据源连接参数。前端表单构造它、后端加密存它,所以放在共享契约里。
+ * ssl 只有开关:自定义 CA 与客户端证书不在 P2a 范围。
+ */
+export type DsConfig =
+  | { kind: "sqlite"; path: string }
+  | { kind: "mysql"; host: string; port: number; database: string; user: string; password: string; ssl: boolean }
+  | { kind: "postgres"; host: string; port: number; database: string; user: string; password: string; ssl: boolean; schema?: string };
