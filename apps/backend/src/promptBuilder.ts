@@ -1,5 +1,6 @@
 import type { TableSchema, ChatTurn, DrillContext, InsightFact, ValueFormat } from "@chatbi/shared";
 import { renderFactsLines } from "./facts";
+import type { Dialect } from "./datasources/dialect";
 
 /** 保留最近 2 轮完整问答(user + assistant = 4 条消息)。*/
 const HISTORY_MESSAGE_LIMIT = 4;
@@ -39,13 +40,18 @@ SQL: ${context.lastSql}
 }
 
 export function buildPrompt(opts: {
-  question: string; schema: TableSchema[]; history: ChatTurn[]; context?: DrillContext;
+  question: string; schema: TableSchema[]; history: ChatTurn[];
+  dialect: Dialect; context?: DrillContext;
 }): string {
   const recent = opts.history.slice(-HISTORY_MESSAGE_LIMIT);
   const historyText = recent.length
     ? recent.map(t => `${t.role}: ${t.text}`).join("\n")
     : "(无)";
+  // 方言提示放在通用规则之后、schema 之前:紧挨着 schema 能让模型把
+  // 「这是什么库」和「有哪些表」连起来读。
   return `${SYSTEM}
+
+${opts.dialect.promptNotes}
 
 数据库 schema:
 ${renderSchema(opts.schema)}
