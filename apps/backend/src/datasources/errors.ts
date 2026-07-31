@@ -24,6 +24,7 @@ const MESSAGES: Record<DsErrorCode, string> = {
   AUTH_ERROR: "认证失败,请检查用户名与密码",
   DB_NOT_FOUND: "数据库或文件不存在,请检查库名/路径",
   NOT_FOUND: "数据源不存在,可能已被删除",
+  DUPLICATE_NAME: "已有同名数据源,请换个名字",
   TIMEOUT: "查询超时,请缩小查询范围或调高 QUERY_TIMEOUT_MS",
   SQL_ERROR: "SQL 执行失败",
   SCHEMA_STALE: "表或列不存在;表结构可能已变更,试试刷新结构",

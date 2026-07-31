@@ -103,6 +103,7 @@ export type DsErrorCode =
   | "AUTH_ERROR"
   | "DB_NOT_FOUND"     // 目标库/文件不存在
   | "NOT_FOUND"        // 我们自己的数据源记录不存在
+  | "DUPLICATE_NAME"   // 数据源重名,前端要能定位到名称输入框
   | "TIMEOUT"
   | "SQL_ERROR"
   | "SCHEMA_STALE"     // SQL_ERROR 的一种:表或列不存在,提示用户刷新结构

@@ -5,6 +5,7 @@ import { DbClient } from "./dbClient";
 import { LlmClient } from "./llmClient";
 import { migrate } from "./migrate";
 import { createChatRouter } from "./routes/chat";
+import { createDataSourcesRouter } from "./routes/datasources";
 import { config } from "./config";
 import { openAppDb, type AppDb } from "./appDb/index";
 import { runMigrations } from "./appDb/migrations";
@@ -54,6 +55,9 @@ export function startServer() {
   const server = express();
   server.use(express.json());
   server.use("/api/chat", createChatRouter({ registry: app.registry, llm: new LlmClient() }));
+  server.use("/api/datasources", createDataSourcesRouter({
+    db: app.appDb, key: app.key, registry: app.registry,
+  }));
 
   const shutdown = async (): Promise<void> => {
     await app.registry.closeAll();
