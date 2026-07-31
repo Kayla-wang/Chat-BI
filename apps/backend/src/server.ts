@@ -11,7 +11,6 @@ import { runMigrations } from "./appDb/migrations";
 import { loadKey } from "./appDb/secrets";
 import { ensureBuiltinDataSource } from "./appDb/bootstrap";
 import { createRegistry, type DataSourceRegistry } from "./datasources/registry";
-import { SQLITE_DIALECT } from "./datasources/dialect";
 
 /**
  * 启动期的准备工作,不监听端口——所以可以在测试里直接调。
@@ -50,29 +49,15 @@ export function startServer() {
     process.exit(1);
   }
 
-  // P2a-2 会把 chat 的 deps 换成按 dataSourceId 取 driver;
-  // 现在先保持 P1 的行为不变,避免这一步就改动问答链路。
-  const db = new DbClient(config.dbPath, { readonly: true });
-  try { db.getSchema(); } catch (e) { console.error("schema self-check failed:", e); process.exit(1); }
-
-  // deps 已按 driver 契约异步化;这里仍是 P1 的单一 SQLite 连接,
-  // 换成「按 dataSourceId 从 registry 取 driver」是 P2a-2 后半段的事。
-  const deps = {
-    db: {
-      getSchema: async () => db.getSchema(),
-      runQuery: async (sql: string, limit: number) => db.runQuery(sql, limit),
-    },
-    dialect: SQLITE_DIALECT,
-    llm: new LlmClient(),
-  };
+  // 启动时不再做 schema 自检:那是「只有一个库」时代的手段,现在做等于把 N 个源
+  // 的连接在启动时全建一遍。源连不上要在列表里显示状态,而不是让服务起不来。
   const server = express();
   server.use(express.json());
-  server.use("/api/chat", createChatRouter(deps));
+  server.use("/api/chat", createChatRouter({ registry: app.registry, llm: new LlmClient() }));
 
   const shutdown = async (): Promise<void> => {
     await app.registry.closeAll();
     app.appDb.close();
-    db.close();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

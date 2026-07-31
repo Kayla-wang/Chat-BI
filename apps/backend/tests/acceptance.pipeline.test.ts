@@ -1,6 +1,6 @@
 /**
  * 用真实示例库 + stub LLM 跑验收清单的场景。
- * 覆盖 migrate 数据 → sqlGuard → dbClient → chartSpec → facts → insightWriter 的真实链路,
+ * 覆盖 migrate 数据 → sqlGuard → sqlite driver → chartSpec → facts → insightWriter 的真实链路,
  * 但不代替 README 的人工验收(那一步要验 LLM 自己选的 SQL、hint 与措辞)。
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -9,12 +9,13 @@ import { join } from "node:path";
 import { DbClient } from "../src/dbClient";
 import { migrate } from "../src/migrate";
 import { handleChat } from "../src/chatService";
-import { SQLITE_DIALECT } from "../src/datasources/dialect";
+import { createSqliteDriver } from "../src/datasources/drivers/sqlite";
 import type { ChartHint, StreamEvent } from "@chatbi/shared";
 
 const tmpDir = join(process.cwd(), ".tmp-acceptance");
 const dbPath = join(tmpDir, "a.db");
-let db: DbClient;
+let db: DbClient;                       // 保留:第 8、9 条断言要用可读连接数行数与试写
+let driver: ReturnType<typeof createSqliteDriver>;
 
 beforeAll(() => {
   mkdirSync(tmpDir, { recursive: true });
@@ -22,20 +23,25 @@ beforeAll(() => {
   migrate(writable);
   writable.close();
   db = new DbClient(dbPath, { readonly: true });
+  driver = createSqliteDriver({ kind: "sqlite", path: dbPath });
 });
-afterAll(() => { db.close(); rmSync(tmpDir, { recursive: true, force: true }); });
+afterAll(async () => {
+  await driver.close();
+  db.close();
+  rmSync(tmpDir, { recursive: true, force: true });
+});
 
 async function ask(sql: string, hint: Partial<ChartHint>, explanation: string) {
   const raw = JSON.stringify({
     sql, explanation, chartType: "table", dimensions: [], measures: [], ...hint,
   });
   const deps = {
-    // chatService 的 deps 现在是异步的(driver 契约),这里把同步的 DbClient 包一层。
+    // 走真 driver:这条验收链路顺带覆盖 driver → chatService 这一段。
     db: {
-      getSchema: async () => db.getSchema(),
-      runQuery: async (s: string, limit: number) => db.runQuery(s, limit),
+      getSchema: () => driver.introspect(),
+      runQuery: (s: string, limit: number) => driver.runQuery(s, limit, 5000),
     },
-    dialect: SQLITE_DIALECT,
+    dialect: driver.dialect,
     llm: {
       chatStream: async function* (prompt: string) {
         // 第一轮出 JSON,第二轮(洞察)出散文——用 prompt 里的标志区分。
