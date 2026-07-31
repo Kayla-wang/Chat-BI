@@ -1,4 +1,7 @@
-import type { ChatTurn, DrillContext, StreamEvent } from "@chatbi/shared";
+import type {
+  ChatTurn, DataSourceDetail, DataSourceSummary, DrillContext, DsApiError, DsConfigInput,
+  DsErrorCode, RefreshSchemaResponse, SchemaResponse, StreamEvent, TestConnectionOk,
+} from "@chatbi/shared";
 
 export function streamChat(opts: {
   question: string; history: ChatTurn[]; context?: DrillContext;
@@ -42,3 +45,65 @@ export function streamChat(opts: {
     }
   })();
 }
+
+/** 带 code 的错误。界面按 code 决定提示语与可用操作,所以不能退化成普通 Error。 */
+export class ApiError extends Error {
+  constructor(
+    readonly code: DsErrorCode,
+    message: string,
+    readonly details?: string,
+    readonly canForce?: boolean,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+const DS_BASE = "/api/datasources";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${DS_BASE}${path}`, init);
+  } catch (e) {
+    throw new ApiError("UNKNOWN", `网络错误:${(e as Error).message}`);
+  }
+  if (res.status === 204) return undefined as T;   // 删除没有响应体
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    // 真 500 常常回 HTML,把 SyntaxError 甩给用户等于没有提示。
+    throw new ApiError("UNKNOWN", res.ok ? "服务器返回了无法解析的内容" : `服务器返回 ${res.status}`);
+  }
+  if (!res.ok) {
+    const e = (body ?? {}) as DsApiError;
+    throw new ApiError(e.code ?? "UNKNOWN", e.message ?? `服务器返回 ${res.status}`, e.details, e.canForce);
+  }
+  return body as T;
+}
+
+const send = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const listDataSources = (): Promise<DataSourceSummary[]> => request("");
+export const getDataSource = (id: string): Promise<DataSourceDetail> => request(`/${id}`);
+
+// 后端的 parseDsConfigInput 从 body 顶层读字段,所以这里把 input 摊平,不套一层 config。
+export const testDsConfig = (input: DsConfigInput): Promise<TestConnectionOk> =>
+  request("/test", send("POST", { ...input }));
+
+export const createDataSource = (name: string, input: DsConfigInput, force?: boolean): Promise<DataSourceDetail> =>
+  request("", send("POST", { name, ...input, ...(force ? { force: true } : {}) }));
+
+export const updateDataSource = (id: string, name: string, input: DsConfigInput): Promise<DataSourceDetail> =>
+  request(`/${id}`, send("PUT", { name, ...input }));
+
+export const deleteDataSource = (id: string): Promise<void> => request(`/${id}`, { method: "DELETE" });
+export const testDataSource = (id: string): Promise<TestConnectionOk> => request(`/${id}/test`, { method: "POST" });
+export const refreshSchema = (id: string): Promise<RefreshSchemaResponse> =>
+  request(`/${id}/refresh-schema`, { method: "POST" });
+export const fetchSchema = (id: string): Promise<SchemaResponse> => request(`/${id}/schema`);
