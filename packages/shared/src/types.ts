@@ -109,3 +109,55 @@ export type DsErrorCode =
   | "PERMISSION_ERROR"
   | "DECRYPT_ERROR"
   | "UNKNOWN";
+
+export type DataSourceStatus = "ok" | "error" | "needs_reconfig" | "unchecked";
+
+export interface DataSourceSummary {
+  id: string;
+  name: string;
+  kind: DataSourceKind;
+  /** 脱敏摘要,例如 mysql://bi_ro@10.0.0.5:3306/sales。永不含密码。 */
+  target: string;
+  status: DataSourceStatus;
+  writePrivilege: WritePrivilege | null;
+  lastCheckAt: string | null;
+  lastCheckError: string | null;
+  schemaFetchedAt: string | null;
+  tableCount: number | null;
+}
+
+/** 回给前端表单回填用的连接字段。故意没有 password。 */
+export interface DataSourceConnectionView {
+  path?: string; host?: string; port?: number;
+  database?: string; user?: string; ssl?: boolean; schema?: string;
+}
+
+export interface DataSourceDetail extends DataSourceSummary {
+  connection: DataSourceConnectionView;
+  hasPassword: boolean;
+}
+
+/** 与 DsConfig 同构,但 password 可选:PUT 时字段缺失表示「不改密码」。 */
+export type DsConfigInput =
+  | { kind: "sqlite"; path: string }
+  | { kind: "mysql"; host: string; port: number; database: string; user: string; password?: string; ssl: boolean }
+  | { kind: "postgres"; host: string; port: number; database: string; user: string; password?: string; ssl: boolean; schema?: string };
+
+export interface DsApiError {
+  code: DsErrorCode;
+  message: string;
+  /** 原生错误原文,前端折叠在「查看详情」里。 */
+  details?: string;
+  /** 测连失败但配置可能没错时为 true,前端给「仍然保存」。 */
+  canForce?: boolean;
+}
+
+export interface TestConnectionOk {
+  ok: true;
+  writePrivilege: WritePrivilege;
+  tableCount: number;
+}
+
+export interface SchemaResponse { schema: TableSchema[]; fetchedAt: string | null }
+
+export interface RefreshSchemaResponse { tableCount: number; fetchedAt: string; elapsedMs: number }
