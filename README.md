@@ -26,6 +26,8 @@
 3. 后端:`npm run dev --workspace=apps/backend`(http://localhost:5174)
 4. 前端:`npm run dev --workspace=apps/frontend`(http://localhost:5173)
 
+首次启动会在 `apps/backend/data/app.db` 里注册一个内置的「示例订单库」(sqlite),顶栏的数据源选择器默认选它。要接 MySQL / PostgreSQL,点顶栏右侧的「管理」进 `/datasources` 新建:填连接参数 → 「测试连接」→ 保存。选中哪个源,提问就走哪个源。
+
 模型默认值是 `llama3.1`,但验收问题全是中文,换 `qwen3:8b` 一类中文更强的模型出 SQL 更稳,用 `OLLAMA_MODEL` 指定。
 
 第一轮 LLM(出 SQL)不可缺:Ollama 不可用时整轮直接返回 `error`,图表出不来;只有第二轮洞察会降级(见验收清单第 8 条)。
@@ -75,9 +77,9 @@ docs/superpowers  设计 spec 与实施计划
 ## 测试
 
 ```bash
-npm test                               # 全仓 26 文件 / 267 测试(复用各工作区自己的配置)
-npx vitest --root apps/backend run     # 后端 171
-npx vitest --root apps/frontend run    # 前端 67
+npm test                               # 全仓 46 文件 / 551 测试 + 3 skipped(复用各工作区自己的配置)
+npx vitest --root apps/backend run     # 后端 373(+3 skipped:MySQL / PG 契约测试需要真库)
+npx vitest --root apps/frontend run    # 前端 149
 npx vitest --root packages/shared run  # 共享 29
 ```
 
@@ -86,6 +88,8 @@ npx vitest --root packages/shared run  # 共享 29
 Windows 下偶发 `No test suite found in file ...`(文件被收集到但报 0 个测试):vitest 1.6 worker 收集阶段的 flake,与并发/机器负载相关 —— 观测到的失败都发生在有其它进程同时跑 vitest 的时候,且失败那次 collect 耗时是正常值的两倍以上。不是代码问题,单独重跑一次即可,尽量别让两个 vitest 进程并行。
 
 ## 手动验收清单
+
+### A. P1 回归(在「示例订单库」上问,9 条原样)
 
 发版前依次问,人工确认图表类型、数据与洞察:
 
@@ -98,6 +102,14 @@ Windows 下偶发 `No test suite found in file ...`(文件被收集到但报 0 �
 7. 「查询 1999 年的订单」→ 空表格 + 洞察「没有符合条件的记录」
 8. 关掉 Ollama 后再问一次 → 图表仍渲染,洞察降级为模板文本(验证第二轮失败不影响第一轮)
 9. 任意一轮展开「查看 SQL」与「计算依据」,核对 SQL 与洞察里的数字一致
+
+### B. P2a 数据源相关
+
+完整的 15 条在 [P2a 设计 spec 第 12 节](docs/superpowers/specs/2026-07-31-chatbi-p2-datasource-design.md)(含真库方言、错误提示、超时、凭据落盘检查),那份是唯一出处,别在这里抄第二份。每次发版至少跑这三条最小回归:
+
+1. 在 A 源做完一轮下钻,切到 B 源 → 会话里出现「已切换到数据源 B」分隔提示,下一问的 SQL **不是**在 A 的 SQL 上改写(展开「查看 SQL」确认)
+2. `strings apps/backend/data/app.db | grep <你填的数据库密码>` → 无命中
+3. 删除一个数据源 → 二次确认提到「引用它的看板卡片会失效」,删除后 `schema_cache` 里对应行也没了
 
 ## 界面
 
@@ -114,3 +126,6 @@ Windows 下偶发 `No test suite found in file ...`(文件被收集到但报 0 �
 - `seriesBy` 取值超过 12 个(`SERIES_BY_MAX`)时自动退化为单系列,并在图表下方标注。
 - 第一轮 LLM 调用没有超时保护(`llmClient` 是裸 `fetch`),模型很慢时 SSE 会一直挂着、既不出图也不报错。只有第二轮洞察有 `INSIGHT_TIMEOUT_MS`;`QUERY_TIMEOUT_MS` 只管 SQLite 执行,与 LLM 无关。
 - `npm run build` 只产出前端静态文件,后端只挂了 `/api/chat`、不托管它们,离开 Vite dev server 需要自己加静态服务或反向代理。
+- 前端现在是 `BrowserRouter` 两条路由(`/` 与 `/datasources`)。Vite dev server 自带 history fallback,但换成任何静态托管(nginx、`serve`、Caddy)都必须把未命中的路径重写到 `index.html`,否则刷新 `/datasources` 会 404。P2c 的分享页 `/s/:token` 同理。
+- 数据源列表与选中项在前端是内存 + `localStorage`(键 `chatbi.selectedDataSourceId`)。多标签页同时改数据源不会互相同步,刷新后以服务端列表为准。
+- 管理页的连接测试是同步等待的:填了不可达的地址时,「测试连接」会挂到后端超时(`QUERY_TIMEOUT_MS`)才给结果。

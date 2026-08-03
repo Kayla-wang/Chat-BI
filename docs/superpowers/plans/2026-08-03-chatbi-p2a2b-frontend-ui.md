@@ -2788,6 +2788,11 @@ git commit -m "docs: data source UI notes in README and P2a-2 frontend acceptanc
 - **类型一致性**:`Message.epoch` 是必填,所以 Task 9 把三处构造点(user / assistant / notice)全列了出来;`fmtIsoMinute` 由 `SchemaTree` 导出、管理页复用,没有第二份时间格式化;`StatusBadge` 的 props 在选择器与管理页两处调用签名相同;表单的 `DsConfigInput` 构造与后端 `parseDsConfigInput` 的字段名逐个对齐(含 `schema` 只在 postgres 且非空时才发)。
 - **一个刻意的取舍**:`DataSourcesPage.tsx` 到 Task 11 结束约 200 行,是本篇最大的文件。没有再拆是因为「列表行 + 行内操作 + 表单开关」共享 `busy` / `feedback` / 展开态三份状态,拆开就要把这三份状态提上去或者用 Context,得不偿失;真要拆,P2b 加建模入口时再把行抽成 `DataSourceRow`。
 
-## 实施期的偏差记录
+## 实施期的偏差记录(2026-08-03 执行时补)
 
-(执行时补:实际与计划不一致的地方、Task 12 Step 5 三项浏览器检查的结果。)
+1. **前端测试总数是 149,不是计划里的 150。** Task 9 Step 1 计划新增两个请求体用例,但 `api.test.ts` 里「无 context 时 body 里不出现该字段」**早已存在**(P1 就写了),只补了 `dataSourceId` 那一条。另外那两处 `streamChat` 直调(错误路径的 describe)也要补 `dataSourceId`,计划漏写了。
+2. **`SchemaTree` 测试的正则匹配器改成精确字符串。** `screen.getByText(/regions/)` 会同时命中表名 span 与外键行 `region → regions.code`(`<details>` 折叠但内容仍在 DOM 里),报 "Found multiple elements"。改成 `getByText("regions")` —— 外键行的完整文本不等于 `regions`,精确匹配唯一。
+3. **「原文不外露」的断言方式改了。** 计划写 `expect(alert.textContent).not.toContain("ECONNREFUSED")`,但原文就在这个 alert 内部的 `<details>` 里,`textContent` 必然包含它。改成断言 `details.open === false`——「默认折叠」才是真正要保的行为。`DataSourceForm` 的同类用例本来就没写这条断言,不受影响。
+4. **顺手修了 README「测试」段的过期计数**(后端 171 → 373、前端 67 → 149、全仓 267 → 551 + 3 skipped)。P2a-1 起就已经不准,而 Task 12 正在改同一个文件,留着是错的。
+5. **Task 12 Step 5 的三项浏览器检查没跑**(键盘 Tab 走位、200% 缩放、深浅色下状态色可辨)。需要人在真浏览器里看,自动化测试代替不了。三项都还是未勾选状态,验收前请手工过一遍;`StatusBadge` 的「颜色不是唯一信息载体」已有单测兜底(状态点 `aria-hidden` + 文字标签)。
+6. 其余 49 个步骤按计划执行,没有别的偏差。每个任务结束时 `npm test --workspaces` 全绿:后端 373 + 3 skipped、前端 149、shared 29;`tsc --noEmit` 与 `npm run build` 均通过;`style={{` 与组件内颜色字面量两条 grep 无新增命中。
