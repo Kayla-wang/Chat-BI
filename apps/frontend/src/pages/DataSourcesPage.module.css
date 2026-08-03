@@ -1,0 +1,11 @@
+.page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-5) 0;
+}
+
+.title {
+  font-size: var(--fs-xl);
+  margin-bottom: var(--sp-4);
+}

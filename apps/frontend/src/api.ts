@@ -4,7 +4,7 @@ import type {
 } from "@chatbi/shared";
 
 export function streamChat(opts: {
-  question: string; history: ChatTurn[]; context?: DrillContext;
+  question: string; dataSourceId: string; history: ChatTurn[]; context?: DrillContext;
   onEvent: (e: StreamEvent) => void;
   endpoint?: string;
 }): Promise<void> {
@@ -17,6 +17,7 @@ export function streamChat(opts: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: opts.question,
+          dataSourceId: opts.dataSourceId,
           history: opts.history,
           ...(opts.context ? { context: opts.context } : {}),
         }),

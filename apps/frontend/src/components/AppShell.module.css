@@ -20,6 +20,9 @@
 }
 
 .slot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }

@@ -12,8 +12,10 @@ function mockFetch(sseBody: string) {
 const collect = (body: string, extra: Record<string, unknown> = {}) => {
   (global as any).fetch = mockFetch(body);
   const events: StreamEvent[] = [];
-  return streamChat({ question: "q", history: [], onEvent: e => events.push(e), ...extra })
-    .then(() => events);
+  return streamChat({
+    question: "q", dataSourceId: "ds1", history: [],
+    onEvent: e => events.push(e), ...extra,
+  }).then(() => events);
 };
 
 beforeEach(() => { (global as any).fetch = undefined; });
@@ -51,19 +53,26 @@ describe("streamChat 请求体", () => {
     const body = JSON.parse((global as any).fetch.mock.calls[0][1].body);
     expect("context" in body).toBe(false);
   });
+
+  it("带上 dataSourceId,后端按它取 driver", async () => {
+    await collect('data: {"type":"done"}\n\n');
+    const body = JSON.parse((global as any).fetch.mock.calls[0][1].body);
+    expect(body.dataSourceId).toBe("ds1");
+    expect(body.question).toBe("q");
+  });
 });
 
 describe("streamChat 错误路径", () => {
   it("非 2xx 时发 error 事件", async () => {
     (global as any).fetch = vi.fn().mockResolvedValue({ ok: false, status: 500, body: null } as any);
     const events: StreamEvent[] = [];
-    await streamChat({ question: "q", history: [], onEvent: e => events.push(e) });
+    await streamChat({ question: "q", dataSourceId: "ds1", history: [], onEvent: e => events.push(e) });
     expect(events[0].type).toBe("error");
   });
   it("fetch 抛错时发 error 事件", async () => {
     (global as any).fetch = vi.fn().mockRejectedValue(new Error("offline"));
     const events: StreamEvent[] = [];
-    await streamChat({ question: "q", history: [], onEvent: e => events.push(e) });
+    await streamChat({ question: "q", dataSourceId: "ds1", history: [], onEvent: e => events.push(e) });
     expect((events[0] as any).message).toMatch(/offline|网络/);
   });
 });

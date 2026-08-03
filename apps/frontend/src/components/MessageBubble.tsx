@@ -4,15 +4,25 @@ import styles from "./MessageBubble.module.css";
 
 export interface Message {
   id: string;
-  role: "user" | "assistant";
-  /** 用户提问,或助手侧的错误提示。查询意图走 payload.queryIntent。 */
+  role: "user" | "assistant" | "notice";
+  /** 用户提问、助手侧错误提示,或切源分隔提示。查询意图走 payload.queryIntent。 */
   text: string;
+  /** 属于第几个数据源阶段。切源后 epoch 变大,旧阶段的消息不再进 history。 */
+  epoch: number;
   payload?: ResultPayload;
   facts?: InsightFact[];
   insight?: string;
 }
 
 export function MessageBubble({ message }: { message: Message }) {
+  if (message.role === "notice") {
+    return (
+      <div className={styles.row}>
+        <div className={styles.notice} role="status" data-testid="switch-notice">{message.text}</div>
+      </div>
+    );
+  }
+
   if (message.role === "user") {
     return (
       <div className={styles.row}>

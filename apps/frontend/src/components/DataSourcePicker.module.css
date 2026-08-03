@@ -1,0 +1,28 @@
+.wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-xs);
+}
+
+.label { color: var(--text-muted); }
+
+.select {
+  max-width: 220px;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+}
+
+.hint { color: var(--text-muted); }
+
+.manage {
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.manage:hover { text-decoration: underline; }

@@ -12,8 +12,8 @@ describe("AppShell", () => {
     render(<AppShell><p>内容</p></AppShell>);
     expect(screen.getByRole("main").textContent).toContain("内容");
   });
-  it("顶栏右侧留了数据源占位", () => {
-    render(<AppShell><div /></AppShell>);
-    expect(screen.getByTestId("datasource-slot")).toBeTruthy();
+  it("顶栏右侧渲染传入的 toolbar", () => {
+    render(<AppShell toolbar={<span>选择器</span>}><div /></AppShell>);
+    expect(screen.getByTestId("datasource-slot").textContent).toBe("选择器");
   });
 });

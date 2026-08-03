@@ -26,6 +26,18 @@
   white-space: pre-wrap;
 }
 
+/* 切源分隔提示:虚线框 + 居中,视觉上明确「上面的上下文断了」。 */
+.notice {
+  align-self: center;
+  max-width: 90%;
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  text-align: center;
+}
+
 .error {
   margin-top: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
