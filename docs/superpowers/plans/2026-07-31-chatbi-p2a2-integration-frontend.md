@@ -1763,7 +1763,278 @@ git commit -m "feat(backend,shared): data source management endpoints"
 
 ---
 
-<!--TASK7-->
+### Task 7: 前端数据源 API 客户端
+
+后面两个前端任务都要打这 8 个端点,先把「拼 URL、摊平请求体、翻错误」这三件重复劳动收进 `api.ts`,页面组件里就不会再出现 `fetch` 与状态码判断。
+
+有两个地方不能想当然:①**后端的请求体是扁平的**——Task 6 的 `parseDsConfigInput(req.body)` 直接从 body 顶层读 `kind` / `host` / `port`,不是 `{ config: {...} }` 的嵌套形状,客户端负责摊平;②**错误必须带上 `code`**——界面要按 `SCHEMA_STALE` 提示刷新结构、按 `canForce` 给「仍然保存」、按 `DUPLICATE_NAME` 把焦点放回名称输入框,普通 `Error` 只剩一句消息,这些分支就全做不出来。
+
+**Files:**
+- Modify: `apps/frontend/src/api.ts`(在文件末尾追加;`streamChat` 本任务**不动**,它的 `dataSourceId` 是 Task 8 的事)
+- Test: `apps/frontend/src/__tests__/dsApi.test.ts`(新建)
+
+**Interfaces:**
+- Consumes: Task 4 放进 `packages/shared/src/types.ts` 的 `DataSourceSummary` / `DataSourceDetail` / `DsConfigInput` / `DsApiError` / `TestConnectionOk` / `SchemaResponse` / `RefreshSchemaResponse` / `DsErrorCode`;Task 6 的 8 个端点及其状态码(新建 201、删除 204、`NOT_FOUND` 404、`DUPLICATE_NAME` 409、其余数据源错误 400)。
+- Produces:
+
+```ts
+export class ApiError extends Error {
+  readonly code: DsErrorCode;
+  readonly details?: string;
+  readonly canForce?: boolean;
+}
+export function listDataSources(): Promise<DataSourceSummary[]>;
+export function getDataSource(id: string): Promise<DataSourceDetail>;
+export function testDsConfig(input: DsConfigInput): Promise<TestConnectionOk>;
+export function createDataSource(name: string, input: DsConfigInput, force?: boolean): Promise<DataSourceDetail>;
+export function updateDataSource(id: string, name: string, input: DsConfigInput): Promise<DataSourceDetail>;
+export function deleteDataSource(id: string): Promise<void>;
+export function testDataSource(id: string): Promise<TestConnectionOk>;
+export function refreshSchema(id: string): Promise<RefreshSchemaResponse>;
+export function fetchSchema(id: string): Promise<SchemaResponse>;
+```
+
+- [ ] **Step 1: 写失败的测试**
+
+Create `apps/frontend/src/__tests__/dsApi.test.ts`:
+
+```tsx
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { DataSourceSummary } from "@chatbi/shared";
+import {
+  ApiError, createDataSource, deleteDataSource, fetchSchema, getDataSource,
+  listDataSources, refreshSchema, testDataSource, testDsConfig, updateDataSource,
+} from "../api";
+
+const summary: DataSourceSummary = {
+  id: "ds1", name: "示例订单库", kind: "sqlite", target: "./data/chatbi.db",
+  status: "ok", writePrivilege: "readonly", lastCheckAt: "2026-07-31T00:00:00.000Z",
+  lastCheckError: null, schemaFetchedAt: "2026-07-31T00:00:00.000Z", tableCount: 3,
+};
+
+/** 只桩 fetch:客户端的职责是拼 URL、摊平 body、翻错误,不需要真服务器。 */
+function stub(res: { status?: number; json?: unknown; notJson?: boolean; reject?: string }) {
+  const f = res.reject
+    ? vi.fn().mockRejectedValue(new Error(res.reject))
+    : vi.fn().mockResolvedValue({
+        ok: (res.status ?? 200) < 400,
+        status: res.status ?? 200,
+        json: () => res.notJson
+          ? Promise.reject(new SyntaxError("Unexpected token <"))
+          : Promise.resolve(res.json),
+      } as any);
+  (global as any).fetch = f;
+  return f;
+}
+const call = () => (global as any).fetch.mock.calls[0];
+const bodyOf = () => JSON.parse(call()[1].body);
+const mysqlInput = { kind: "mysql" as const, host: "10.0.0.5", port: 3306, database: "sales", user: "bi_ro", ssl: false };
+
+beforeEach(() => { (global as any).fetch = undefined; });
+
+describe("列表与详情", () => {
+  it("列表原样返回,URL 不带尾斜杠", async () => {
+    stub({ json: [summary] });
+    expect(await listDataSources()).toEqual([summary]);
+    expect(call()[0]).toBe("/api/datasources");
+  });
+
+  it("详情按 id 拼路径", async () => {
+    stub({ json: { ...summary, connection: { path: "./data/chatbi.db" }, hasPassword: false } });
+    expect((await getDataSource("ds1")).hasPassword).toBe(false);
+    expect(call()[0]).toBe("/api/datasources/ds1");
+  });
+});
+
+describe("新建与修改的请求体", () => {
+  it("请求体是扁平的:name 与连接字段同层", async () => {
+    stub({ status: 201, json: summary });
+    await createDataSource("销售库", { ...mysqlInput, password: "pw" });
+    expect(bodyOf()).toEqual({ name: "销售库", ...mysqlInput, password: "pw" });
+    expect(call()[1].method).toBe("POST");
+  });
+
+  it("force 只在为 true 时出现", async () => {
+    stub({ status: 201, json: summary });
+    await createDataSource("库", { kind: "sqlite", path: "./a.db" });
+    expect("force" in bodyOf()).toBe(false);
+    stub({ status: 201, json: summary });
+    await createDataSource("库", { kind: "sqlite", path: "./a.db" }, true);
+    expect(bodyOf().force).toBe(true);
+  });
+
+  it("不改密码时请求体里没有 password 字段", async () => {
+    stub({ json: summary });
+    await updateDataSource("ds1", "销售库", mysqlInput);
+    expect("password" in bodyOf()).toBe(false);
+    expect(call()[1].method).toBe("PUT");
+    expect(call()[0]).toBe("/api/datasources/ds1");
+  });
+
+  it("密码显式为空字符串时原样送出(与缺失是两回事)", async () => {
+    stub({ json: summary });
+    await updateDataSource("ds1", "销售库", { ...mysqlInput, password: "" });
+    expect(bodyOf().password).toBe("");
+  });
+});
+
+describe("四个动作端点", () => {
+  it("测未保存的表单打 /test 且不带 name", async () => {
+    stub({ json: { ok: true, writePrivilege: "readonly", tableCount: 3 } });
+    expect((await testDsConfig({ kind: "sqlite", path: "./a.db" })).tableCount).toBe(3);
+    expect(call()[0]).toBe("/api/datasources/test");
+    expect("name" in bodyOf()).toBe(false);
+  });
+
+  it("重测已存源打 /:id/test", async () => {
+    stub({ json: { ok: true, writePrivilege: "unknown", tableCount: 1 } });
+    await testDataSource("ds1");
+    expect(call()[0]).toBe("/api/datasources/ds1/test");
+    expect(call()[1].method).toBe("POST");
+  });
+
+  it("刷新结构与读结构各打各的路径", async () => {
+    stub({ json: { tableCount: 3, fetchedAt: "2026-07-31T00:00:00.000Z", elapsedMs: 12 } });
+    expect((await refreshSchema("ds1")).elapsedMs).toBe(12);
+    expect(call()[0]).toBe("/api/datasources/ds1/refresh-schema");
+    stub({ json: { schema: [], fetchedAt: null } });
+    expect((await fetchSchema("ds1")).fetchedAt).toBeNull();
+    expect(call()[0]).toBe("/api/datasources/ds1/schema");
+  });
+
+  it("删除的 204 不去解析响应体", async () => {
+    stub({ status: 204, notJson: true });
+    await expect(deleteDataSource("ds1")).resolves.toBeUndefined();
+    expect(call()[1].method).toBe("DELETE");
+  });
+});
+
+describe("错误翻译", () => {
+  const caught = async (p: Promise<unknown>) => await p.then(() => null, (e: unknown) => e as ApiError);
+
+  it("404 抛 ApiError 并带 code", async () => {
+    stub({ status: 404, json: { code: "NOT_FOUND", message: "数据源不存在,可能已被删除" } });
+    const e = await caught(getDataSource("nope"));
+    expect(e instanceof ApiError).toBe(true);
+    expect(e!.code).toBe("NOT_FOUND");
+    expect(e!.message).toBe("数据源不存在,可能已被删除");
+  });
+
+  it("details 与 canForce 原样透传", async () => {
+    stub({ status: 400, json: { code: "CONNECTION_ERROR", message: "无法连接", details: "ECONNREFUSED", canForce: true } });
+    const e = await caught(createDataSource("库", { kind: "sqlite", path: "./a.db" }));
+    expect(e!.details).toBe("ECONNREFUSED");
+    expect(e!.canForce).toBe(true);
+  });
+
+  it("响应不是 JSON 时给中文兜底消息,不冒出 SyntaxError", async () => {
+    stub({ status: 500, notJson: true });
+    const e = await caught(listDataSources());
+    expect(e instanceof ApiError).toBe(true);
+    expect(e!.message).toContain("500");
+  });
+
+  it("fetch 自己抛错时也是 ApiError", async () => {
+    stub({ reject: "offline" });
+    const e = await caught(listDataSources());
+    expect(e instanceof ApiError).toBe(true);
+    expect(e!.code).toBe("UNKNOWN");
+    expect(e!.message).toContain("offline");
+  });
+});
+```
+
+- [ ] **Step 2: 运行确认失败**
+
+Run: `npx vitest --root apps/frontend run src/__tests__/dsApi.test.ts`
+Expected: FAIL,`../api` 里没有 `ApiError` 等导出。
+
+- [ ] **Step 3: 在 `api.ts` 末尾追加实现**
+
+`import type` 那一行补齐新类型;`streamChat` 上方与内部一个字都不改。
+
+```ts
+/** 带 code 的错误。界面按 code 决定提示语与可用操作,所以不能退化成普通 Error。 */
+export class ApiError extends Error {
+  constructor(
+    readonly code: DsErrorCode,
+    message: string,
+    readonly details?: string,
+    readonly canForce?: boolean,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+const DS_BASE = "/api/datasources";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${DS_BASE}${path}`, init);
+  } catch (e) {
+    throw new ApiError("UNKNOWN", `网络错误:${(e as Error).message}`);
+  }
+  if (res.status === 204) return undefined as T;   // 删除没有响应体
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    // 真 500 常常回 HTML,把 SyntaxError 甩给用户等于没有提示。
+    throw new ApiError("UNKNOWN", res.ok ? "服务器返回了无法解析的内容" : `服务器返回 ${res.status}`);
+  }
+  if (!res.ok) {
+    const e = (body ?? {}) as DsApiError;
+    throw new ApiError(e.code ?? "UNKNOWN", e.message ?? `服务器返回 ${res.status}`, e.details, e.canForce);
+  }
+  return body as T;
+}
+
+const send = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export const listDataSources = (): Promise<DataSourceSummary[]> => request("");
+export const getDataSource = (id: string): Promise<DataSourceDetail> => request(`/${id}`);
+
+// 后端的 parseDsConfigInput 从 body 顶层读字段,所以这里把 input 摊平,不套一层 config。
+export const testDsConfig = (input: DsConfigInput): Promise<TestConnectionOk> =>
+  request("/test", send("POST", { ...input }));
+
+export const createDataSource = (name: string, input: DsConfigInput, force?: boolean): Promise<DataSourceDetail> =>
+  request("", send("POST", { name, ...input, ...(force ? { force: true } : {}) }));
+
+export const updateDataSource = (id: string, name: string, input: DsConfigInput): Promise<DataSourceDetail> =>
+  request(`/${id}`, send("PUT", { name, ...input }));
+
+export const deleteDataSource = (id: string): Promise<void> => request(`/${id}`, { method: "DELETE" });
+export const testDataSource = (id: string): Promise<TestConnectionOk> => request(`/${id}/test`, { method: "POST" });
+export const refreshSchema = (id: string): Promise<RefreshSchemaResponse> =>
+  request(`/${id}/refresh-schema`, { method: "POST" });
+export const fetchSchema = (id: string): Promise<SchemaResponse> => request(`/${id}/schema`);
+```
+
+密码三态靠**对象展开**天然成立:`DsConfigInput` 的 `password` 是可选字段,调用方不放它,`{ ...input }` 里就没有这个键,`JSON.stringify` 也不会凭空造一个 `null`——这正是 Task 4 的 `mergeConfig` 要的「字段缺失」。
+
+- [ ] **Step 4: 运行确认通过**
+
+Run: `npx vitest --root apps/frontend run src/__tests__/dsApi.test.ts`
+Expected: PASS,14 个测试。
+
+- [ ] **Step 5: 类型检查与全量**
+
+Run: `npx tsc --noEmit -p apps/frontend && npm test --workspaces`
+Expected: 后端 373 + 前端 81 + shared 29,MySQL/PG 各 1 skip。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add apps/frontend/src/api.ts apps/frontend/src/__tests__/dsApi.test.ts
+git commit -m "feat(frontend): data source API client with typed errors"
+```
 
 ---
 
