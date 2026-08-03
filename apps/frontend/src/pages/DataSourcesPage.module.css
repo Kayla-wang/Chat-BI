@@ -91,3 +91,5 @@
   font-family: var(--font-mono);
   white-space: pre-wrap;
 }
+
+.toolbar { display: flex; justify-content: flex-end; margin-bottom: var(--sp-3); }

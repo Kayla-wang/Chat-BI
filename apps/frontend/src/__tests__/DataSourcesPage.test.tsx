@@ -5,7 +5,8 @@ import type { DataSourceSummary } from "@chatbi/shared";
 import { DataSourcesPage } from "../pages/DataSourcesPage";
 import { DataSourceProvider } from "../dataSourceStore";
 import {
-  ApiError, deleteDataSource, fetchSchema, listDataSources, refreshSchema, testDataSource,
+  ApiError, createDataSource, deleteDataSource, fetchSchema, getDataSource, listDataSources,
+  refreshSchema, testDataSource,
 } from "../api";
 
 vi.mock("../api", async () => {
@@ -14,6 +15,7 @@ vi.mock("../api", async () => {
     ...actual,
     listDataSources: vi.fn(), testDataSource: vi.fn(), refreshSchema: vi.fn(),
     fetchSchema: vi.fn(), deleteDataSource: vi.fn(),
+    getDataSource: vi.fn(), createDataSource: vi.fn(), updateDataSource: vi.fn(),
   };
 });
 
@@ -37,6 +39,8 @@ beforeEach(() => {
   vi.mocked(refreshSchema).mockReset();
   vi.mocked(fetchSchema).mockReset();
   vi.mocked(deleteDataSource).mockReset();
+  vi.mocked(getDataSource).mockReset();
+  vi.mocked(createDataSource).mockReset();
 });
 
 describe("管理页列表", () => {
@@ -148,5 +152,46 @@ describe("管理页删除", () => {
     click("取消");
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(vi.mocked(deleteDataSource)).not.toHaveBeenCalled();
+  });
+});
+
+describe("管理页的新建与编辑", () => {
+  it("点「新建数据源」打开空表单", async () => {
+    mount();
+    await waitFor(() => expect(screen.getByText("销售库")).toBeTruthy());
+    click("新建数据源");
+    expect(screen.getByRole("heading", { name: "新建数据源" })).toBeTruthy();
+    expect((screen.getByLabelText("名称") as HTMLInputElement).value).toBe("");
+  });
+
+  it("点行内「编辑」拉详情并回填", async () => {
+    vi.mocked(getDataSource).mockResolvedValue({
+      id: "ds1", name: "销售库", kind: "mysql", target: "mysql://bi_ro@10.0.0.5:3306/sales",
+      status: "ok", writePrivilege: "readonly", lastCheckAt: null, lastCheckError: null,
+      schemaFetchedAt: null, tableCount: 12, hasPassword: true,
+      connection: { host: "10.0.0.5", port: 3306, database: "sales", user: "bi_ro", ssl: false },
+    });
+    mount();
+    await waitFor(() => expect(screen.getByText("销售库")).toBeTruthy());
+    click("编辑");
+    await waitFor(() => expect(screen.getByRole("heading", { name: "编辑数据源" })).toBeTruthy());
+    expect(vi.mocked(getDataSource)).toHaveBeenCalledWith("ds1");
+    expect((screen.getByLabelText("主机") as HTMLInputElement).value).toBe("10.0.0.5");
+  });
+
+  it("保存成功后关掉表单并重拉列表", async () => {
+    vi.mocked(createDataSource).mockResolvedValue({
+      id: "ds2", name: "新库", kind: "sqlite", target: "./data/new.db", status: "ok",
+      writePrivilege: "readonly", lastCheckAt: null, lastCheckError: null,
+      schemaFetchedAt: null, tableCount: 1, hasPassword: false, connection: { path: "./data/new.db" },
+    });
+    mount();
+    await waitFor(() => expect(screen.getByText("销售库")).toBeTruthy());
+    click("新建数据源");
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "新库" } });
+    fireEvent.change(screen.getByLabelText("文件路径"), { target: { value: "./data/new.db" } });
+    click("保存");
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "新建数据源" })).toBeNull());
+    expect(vi.mocked(listDataSources).mock.calls.length).toBe(2);
   });
 });

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import type { SchemaResponse } from "@chatbi/shared";
+import type { DataSourceDetail, SchemaResponse } from "@chatbi/shared";
 import {
-  ApiError, deleteDataSource, fetchSchema, refreshSchema, testDataSource,
+  ApiError, deleteDataSource, fetchSchema, getDataSource, refreshSchema, testDataSource,
 } from "../api";
 import { useDataSources } from "../dataSourceStore";
 import { KIND_LABEL, PRIVILEGE_LABEL } from "../dsLabels";
+import { DataSourceForm } from "../components/DataSourceForm";
 import { SchemaTree, fmtIsoMinute } from "../components/SchemaTree";
 import { StatusBadge } from "../components/StatusBadge";
 import styles from "./DataSourcesPage.module.css";
@@ -17,6 +18,8 @@ export function DataSourcesPage() {
   const [feedback, setFeedback] = useState<Record<string, Feedback>>({});
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [schema, setSchema] = useState<{ id: string; data: SchemaResponse } | null>(null);
+  /** null = 表单没开;`detail` 缺省即新建。 */
+  const [form, setForm] = useState<{ detail?: DataSourceDetail } | null>(null);
 
   /**
    * 所有行内操作共用:置 busy 防连点、把 ApiError 翻成「可读消息 + 可折叠原文」、
@@ -63,9 +66,27 @@ export function DataSourcesPage() {
     }, { reload: false });
   };
 
+  const onEdit = (id: string) => void run(id, async () => {
+    // 列表里的 summary 没有连接字段,回填必须拿 detail。
+    setForm({ detail: await getDataSource(id) });
+    return "";
+  }, { reload: false });
+
   return (
     <section className={styles.page}>
       <h2 className={styles.title}>数据源管理</h2>
+
+      <div className={styles.toolbar}>
+        <button className={styles.action} onClick={() => setForm({})}>新建数据源</button>
+      </div>
+
+      {form && (
+        <DataSourceForm
+          initial={form.detail}
+          onSaved={() => { setForm(null); void reload(); }}
+          onCancel={() => setForm(null)}
+        />
+      )}
 
       {error && <p className={styles.fail} role="alert">{error}</p>}
       {loading && list.length === 0 && (
@@ -102,6 +123,7 @@ export function DataSourcesPage() {
                 <button className={styles.action} disabled={busy} onClick={() => toggleSchema(d.id)}>
                   {open ? "收起结构" : "查看结构"}
                 </button>
+                <button className={styles.action} disabled={busy} onClick={() => onEdit(d.id)}>编辑</button>
                 <button className={styles.danger} disabled={busy} onClick={() => setConfirmId(d.id)}>删除</button>
               </div>
 
