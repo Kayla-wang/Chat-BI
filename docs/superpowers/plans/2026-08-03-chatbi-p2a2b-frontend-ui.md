@@ -81,7 +81,7 @@ apps/frontend/src/
   }): JSX.Element;
   ```
 
-- [ ] **Step 1: 写 dataSourceStore 的失败测试**
+- [x] **Step 1: 写 dataSourceStore 的失败测试**
 
 创建 `apps/frontend/src/__tests__/dataSourceStore.test.tsx`:
 
@@ -212,7 +212,7 @@ describe("dataSourceStore 切换与重载", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- dataSourceStore
@@ -220,7 +220,7 @@ npm test --workspace=apps/frontend -- dataSourceStore
 
 Expected: FAIL,`Failed to resolve import "../dataSourceStore"`。
 
-- [ ] **Step 3: 实现 dataSourceStore**
+- [x] **Step 3: 实现 dataSourceStore**
 
 创建 `apps/frontend/src/dataSourceStore.tsx`:
 
@@ -307,7 +307,7 @@ export function useDataSources(): DataSourceStore {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 npm test --workspace=apps/frontend -- dataSourceStore
@@ -315,7 +315,7 @@ npm test --workspace=apps/frontend -- dataSourceStore
 
 Expected: PASS,8 个用例。
 
-- [ ] **Step 5: 写 StatusBadge 的失败测试**
+- [x] **Step 5: 写 StatusBadge 的失败测试**
 
 创建 `apps/frontend/src/__tests__/StatusBadge.test.tsx`:
 
@@ -375,7 +375,7 @@ describe("StatusBadge 写权限", () => {
 });
 ```
 
-- [ ] **Step 6: 跑测试确认失败**
+- [x] **Step 6: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- StatusBadge
@@ -383,7 +383,7 @@ npm test --workspace=apps/frontend -- StatusBadge
 
 Expected: FAIL,`Failed to resolve import "../components/StatusBadge"`。
 
-- [ ] **Step 7: 实现 StatusBadge**
+- [x] **Step 7: 实现 StatusBadge**
 
 创建 `apps/frontend/src/components/StatusBadge.tsx`:
 
@@ -467,7 +467,7 @@ export function StatusBadge({ status, writePrivilege }: {
 .muted { color: var(--text-muted); }
 ```
 
-- [ ] **Step 8: 跑全量测试与类型检查**
+- [x] **Step 8: 跑全量测试与类型检查**
 
 ```bash
 npm test --workspaces
@@ -478,7 +478,7 @@ git grep -nE "#[0-9a-fA-F]{3,8}\b" -- apps/frontend/src | grep -v "src/theme/"
 
 Expected: 前端 81 + 14 = 95 passed,后端 373 passed + 3 skipped,shared 29 passed;`tsc` 无输出;`style={{` 无命中;颜色字面量只剩 P1b 已有的三处 `#ffffff`(不新增)。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add apps/frontend/src/dataSourceStore.tsx apps/frontend/src/components/StatusBadge.tsx \
@@ -561,7 +561,7 @@ git commit -m "feat(frontend): data source context and status badge"
   export function DataSourcesPage(): JSX.Element;
   ```
 
-- [ ] **Step 1: 改 api.test.ts,先让契约变化以失败形式出现**
+- [x] **Step 1: 改 api.test.ts,先让契约变化以失败形式出现**
 
 `apps/frontend/src/__tests__/api.test.ts` 的 `collect()` 补上 `dataSourceId`,并新增一个用例断言它进了请求体。替换文件顶部的 `collect` 定义:
 
@@ -595,7 +595,7 @@ describe("streamChat 请求体", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- api.test
@@ -603,7 +603,7 @@ npm test --workspace=apps/frontend -- api.test
 
 Expected: FAIL,新用例报 `expect(body.dataSourceId).toBe("ds1")` 得到 `undefined`(旧 `streamChat` 不往 body 里放它)。
 
-- [ ] **Step 3: 改 streamChat 传 dataSourceId**
+- [x] **Step 3: 改 streamChat 传 dataSourceId**
 
 `apps/frontend/src/api.ts` 的 `streamChat`:签名加字段,body 里加一行。
 
@@ -624,7 +624,7 @@ export function streamChat(opts: {
         }),
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 npm test --workspace=apps/frontend -- api.test
@@ -632,7 +632,7 @@ npm test --workspace=apps/frontend -- api.test
 
 Expected: PASS,8 个用例(原 6 + 新 2)。`tsc` 此刻还会在 `ChatWindow.tsx` 报缺 `dataSourceId`——Step 5–8 修掉。
 
-- [ ] **Step 5: 改 ChatWindow.test.tsx,加切源用例**
+- [x] **Step 5: 改 ChatWindow.test.tsx,加切源用例**
 
 先把现有 10 个用例里的 `render(<ChatWindow />)` 全部换成带 prop 的形式(4 处 describe 共 10 处):
 
@@ -749,7 +749,7 @@ describe("ChatWindow 切换数据源", () => {
 });
 ```
 
-- [ ] **Step 6: 跑测试确认失败**
+- [x] **Step 6: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- ChatWindow
@@ -757,7 +757,7 @@ npm test --workspace=apps/frontend -- ChatWindow
 
 Expected: FAIL,`calls[0].dataSourceId` 是 `undefined`、`switch-notice` 找不到、输入框没被禁用。
 
-- [ ] **Step 7: 给 Message 加 notice 角色**
+- [x] **Step 7: 给 Message 加 notice 角色**
 
 `apps/frontend/src/components/MessageBubble.tsx`——`Message` 接口加两个字段,渲染加一个分支:
 
@@ -803,7 +803,7 @@ export interface Message {
 }
 ```
 
-- [ ] **Step 8: 改 ChatWindow 收 dataSourceId 并按 epoch 断开上下文**
+- [x] **Step 8: 改 ChatWindow 收 dataSourceId 并按 epoch 断开上下文**
 
 `apps/frontend/src/components/ChatWindow.tsx` 全文替换为:
 
@@ -936,7 +936,7 @@ export function ChatWindow({ dataSourceId, dataSourceName }: {
 }
 ```
 
-- [ ] **Step 9: 跑测试确认通过**
+- [x] **Step 9: 跑测试确认通过**
 
 ```bash
 npm test --workspace=apps/frontend -- ChatWindow
@@ -944,7 +944,7 @@ npm test --workspace=apps/frontend -- ChatWindow
 
 Expected: PASS,19 个用例(原 10 + 新 9)。
 
-- [ ] **Step 10: 写选择器与路由的失败测试**
+- [x] **Step 10: 写选择器与路由的失败测试**
 
 创建 `apps/frontend/src/__tests__/DataSourcePicker.test.tsx`:
 
@@ -1097,7 +1097,7 @@ describe("AppRoutes", () => {
   });
 ```
 
-- [ ] **Step 11: 跑测试确认失败**
+- [x] **Step 11: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- DataSourcePicker routes AppShell
@@ -1105,7 +1105,7 @@ npm test --workspace=apps/frontend -- DataSourcePicker routes AppShell
 
 Expected: FAIL,`../components/DataSourcePicker` 与 `../routes` 都解析不到;`AppShell` 报 `toolbar` 不是它的 prop。
 
-- [ ] **Step 12: 实现共用标签表与选择器**
+- [x] **Step 12: 实现共用标签表与选择器**
 
 创建 `apps/frontend/src/dsLabels.ts`(选择器、管理页、表单都要这两张表,只留一份):
 
@@ -1196,7 +1196,7 @@ export function DataSourcePicker() {
 .manage:hover { text-decoration: underline; }
 ```
 
-- [ ] **Step 13: AppShell 顶栏收 toolbar**
+- [x] **Step 13: AppShell 顶栏收 toolbar**
 
 `apps/frontend/src/components/AppShell.tsx` 全文替换为:
 
@@ -1230,7 +1230,7 @@ export function AppShell({ children, toolbar }: { children: ReactNode; toolbar?:
 }
 ```
 
-- [ ] **Step 14: 建路由与两个页面,接上 App**
+- [x] **Step 14: 建路由与两个页面,接上 App**
 
 创建 `apps/frontend/src/pages/ChatPage.tsx`:
 
@@ -1317,7 +1317,7 @@ export const App = () => (
 );
 ```
 
-- [ ] **Step 15: 跑全量测试、类型检查与视觉规则 grep**
+- [x] **Step 15: 跑全量测试、类型检查与视觉规则 grep**
 
 ```bash
 npm test --workspaces
@@ -1330,7 +1330,7 @@ Expected: 前端 95 + 2(api)+ 9(ChatWindow)+ 7(picker)+ 3(routes)= 116 passed,�
 
 `App.tsx` 不写单测:`BrowserRouter` 在 jsdom 里要真 history,收益低;它的组合关系由 `routes.test.tsx`(路由)与 `DataSourcePicker.test.tsx`(选择器)分别覆盖。
 
-- [ ] **Step 16: 提交**
+- [x] **Step 16: 提交**
 
 ```bash
 git add apps/frontend/package.json apps/frontend/src/api.ts apps/frontend/src/App.tsx \
@@ -1368,7 +1368,7 @@ git commit -m "feat(frontend): routing, data source picker and drill context res
   ```
   管理页对外只有 `DataSourcesPage()`,内部状态不外露。Task 11 会在它里面挂 `DataSourceForm`。
 
-- [ ] **Step 1: 写 SchemaTree 的失败测试**
+- [x] **Step 1: 写 SchemaTree 的失败测试**
 
 创建 `apps/frontend/src/__tests__/SchemaTree.test.tsx`:
 
@@ -1434,7 +1434,7 @@ describe("SchemaTree", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- SchemaTree
@@ -1442,7 +1442,7 @@ npm test --workspace=apps/frontend -- SchemaTree
 
 Expected: FAIL,`Failed to resolve import "../components/SchemaTree"`。
 
-- [ ] **Step 3: 实现 SchemaTree**
+- [x] **Step 3: 实现 SchemaTree**
 
 创建 `apps/frontend/src/components/SchemaTree.tsx`:
 
@@ -1577,7 +1577,7 @@ export function SchemaTree({ schema, fetchedAt }: { schema: TableSchema[]; fetch
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 npm test --workspace=apps/frontend -- SchemaTree
@@ -1585,7 +1585,7 @@ npm test --workspace=apps/frontend -- SchemaTree
 
 Expected: PASS,6 个用例。
 
-- [ ] **Step 5: 写管理页列表的失败测试**
+- [x] **Step 5: 写管理页列表的失败测试**
 
 创建 `apps/frontend/src/__tests__/DataSourcesPage.test.tsx`:
 
@@ -1743,7 +1743,7 @@ describe("管理页删除", () => {
 });
 ```
 
-- [ ] **Step 6: 跑测试确认失败**
+- [x] **Step 6: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- DataSourcesPage
@@ -1751,7 +1751,7 @@ npm test --workspace=apps/frontend -- DataSourcesPage
 
 Expected: FAIL,页面只有标题,`销售库` 找不到。
 
-- [ ] **Step 7: 把管理页从骨架填成列表**
+- [x] **Step 7: 把管理页从骨架填成列表**
 
 `apps/frontend/src/pages/DataSourcesPage.tsx` 全文替换为:
 
@@ -1981,7 +1981,7 @@ export function DataSourcesPage() {
 }
 ```
 
-- [ ] **Step 8: 跑全量测试与检查**
+- [x] **Step 8: 跑全量测试与检查**
 
 ```bash
 npm test --workspace=apps/frontend -- SchemaTree DataSourcesPage
@@ -1993,7 +1993,7 @@ git grep -nE "#[0-9a-fA-F]{3,8}\b" -- apps/frontend/src | grep -v "src/theme/"
 
 Expected: 前端 116 + 6 + 10 = 132 passed;后端 373 + 3 skipped、shared 29 不变;`tsc` 无输出;两条 grep 无新增命中。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add apps/frontend/src/components/SchemaTree.tsx apps/frontend/src/components/SchemaTree.module.css \
@@ -2032,7 +2032,7 @@ git commit -m "feat(frontend): data source list with inline actions and schema p
   }): JSX.Element;
   ```
 
-- [ ] **Step 1: 写表单的失败测试**
+- [x] **Step 1: 写表单的失败测试**
 
 创建 `apps/frontend/src/__tests__/DataSourceForm.test.tsx`:
 
@@ -2232,7 +2232,7 @@ describe("编辑", () => {
 });
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- DataSourceForm
@@ -2240,7 +2240,7 @@ npm test --workspace=apps/frontend -- DataSourceForm
 
 Expected: FAIL,`Failed to resolve import "../components/DataSourceForm"`。
 
-- [ ] **Step 3: 实现表单**
+- [x] **Step 3: 实现表单**
 
 创建 `apps/frontend/src/components/DataSourceForm.tsx`:
 
@@ -2534,7 +2534,7 @@ export function DataSourceForm({ initial, onSaved, onCancel }: {
 }
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 ```bash
 npm test --workspace=apps/frontend -- DataSourceForm
@@ -2542,7 +2542,7 @@ npm test --workspace=apps/frontend -- DataSourceForm
 
 Expected: PASS,15 个用例。
 
-- [ ] **Step 5: 写管理页挂表单的失败测试**
+- [x] **Step 5: 写管理页挂表单的失败测试**
 
 在 `apps/frontend/src/__tests__/DataSourcesPage.test.tsx` 里,`vi.mock("../api", …)` 的桩清单补三个:
 
@@ -2597,7 +2597,7 @@ describe("管理页的新建与编辑", () => {
 });
 ```
 
-- [ ] **Step 6: 跑测试确认失败**
+- [x] **Step 6: 跑测试确认失败**
 
 ```bash
 npm test --workspace=apps/frontend -- DataSourcesPage
@@ -2605,7 +2605,7 @@ npm test --workspace=apps/frontend -- DataSourcesPage
 
 Expected: FAIL,找不到「新建数据源」与「编辑」按钮。
 
-- [ ] **Step 7: 管理页挂上表单**
+- [x] **Step 7: 管理页挂上表单**
 
 `apps/frontend/src/pages/DataSourcesPage.tsx` 做四处改动:
 
@@ -2664,7 +2664,7 @@ import { DataSourceForm } from "../components/DataSourceForm";
 .toolbar { display: flex; justify-content: flex-end; margin-bottom: var(--sp-3); }
 ```
 
-- [ ] **Step 8: 跑全量测试与检查**
+- [x] **Step 8: 跑全量测试与检查**
 
 ```bash
 npm test --workspaces
@@ -2675,7 +2675,7 @@ git grep -nE "#[0-9a-fA-F]{3,8}\b" -- apps/frontend/src | grep -v "src/theme/"
 
 Expected: 前端 132 + 15 + 3 = 150 passed;后端 373 + 3 skipped、shared 29 不变;`tsc` 无输出;两条 grep 无新增命中。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add apps/frontend/src/components/DataSourceForm.tsx \
@@ -2696,7 +2696,7 @@ git commit -m "feat(frontend): data source create/edit form with inline connecti
 
 **Interfaces:** 无新代码。
 
-- [ ] **Step 1: README 的「运行」段补数据源入口**
+- [x] **Step 1: README 的「运行」段补数据源入口**
 
 在 `## 运行` 的第 4 步之后、`模型默认值是 …` 那段之前插入一段:
 
@@ -2704,7 +2704,7 @@ git commit -m "feat(frontend): data source create/edit form with inline connecti
 首次启动会在 `apps/backend/data/app.db` 里注册一个内置的「示例订单库」(sqlite),顶栏的数据源选择器默认选它。要接 MySQL / PostgreSQL,点顶栏右侧的「管理」进 `/datasources` 新建:填连接参数 → 「测试连接」→ 保存。选中哪个源,提问就走哪个源。
 ```
 
-- [ ] **Step 2: README 的「手动验收清单」拆成两段**
+- [x] **Step 2: README 的「手动验收清单」拆成两段**
 
 把 `## 手动验收清单` 下的引导句与 9 条改成:
 
@@ -2728,7 +2728,7 @@ git commit -m "feat(frontend): data source create/edit form with inline connecti
 3. 删除一个数据源 → 二次确认提到「引用它的看板卡片会失效」,删除后 `schema_cache` 里对应行也没了
 ```
 
-- [ ] **Step 3: README 的「已知限制」补两条**
+- [x] **Step 3: README 的「已知限制」补两条**
 
 在 `## 已知限制` 末尾追加:
 
@@ -2738,7 +2738,7 @@ git commit -m "feat(frontend): data source create/edit form with inline connecti
 - 管理页的连接测试是同步等待的:填了不可达的地址时,「测试连接」会挂到后端超时(`QUERY_TIMEOUT_MS`)才给结果。
 ```
 
-- [ ] **Step 4: 跑全量自动化验证**
+- [x] **Step 4: 跑全量自动化验证**
 
 ```bash
 npm test --workspaces
@@ -2751,7 +2751,7 @@ git grep -n "datasource-slot" -- apps/frontend/src
 
 Expected: 150 前端 + 373 后端(+3 skipped)+ 29 shared 全绿;`tsc` 与 `build` 无错;`style={{` 无命中;颜色字面量只剩 `src/theme/` 外的三处 `#ffffff`(P1b 遗留,不新增);`datasource-slot` 只在 `AppShell.tsx` 与 `AppShell.test.tsx` 各一处。
 
-- [ ] **Step 5: 浏览器里跑三项自动化验不到的检查**
+- [ ] **Step 5: 浏览器里跑三项自动化验不到的检查**(未执行,需人工在浏览器里过)
 
 起前后端(`npm run dev --workspace=apps/backend` + `npm run dev --workspace=apps/frontend`),在 http://localhost:5173 依次确认,把结果记进本文件末尾的「实施期的偏差记录」:
 
@@ -2759,7 +2759,7 @@ Expected: 150 前端 + 373 后端(+3 skipped)+ 29 shared 全绿;`tsc` 与 `build
 2. **200% 缩放**:浏览器缩放到 200%,`/datasources` 的行不重叠、按钮不溢出、表单字段换行而不是被裁掉。
 3. **深浅色**:切换系统深浅色,四种状态点(正常 / 连接失败 / 需重新填写凭据 / 未检查)与「建议改用只读账号」徽标在两套配色下都能分辨,且每个状态点旁边都有文字说明(颜色不是唯一信息载体)。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add README.md docs/superpowers/plans/2026-08-03-chatbi-p2a2b-frontend-ui.md
