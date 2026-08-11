@@ -1,0 +1,36 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import SecretStr, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """应用配置。主密钥永不出现在 repr 或日志中（SecretStr 负责脱敏）。"""
+
+    model_config = SettingsConfigDict(env_prefix="CHATBI_", extra="ignore")
+
+    database_url: str = "postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi"
+    secret_key: SecretStr | None = None
+    secret_key_file: Path | None = None
+    cookie_secure: bool = False
+    session_ttl_hours: int = 12
+
+    @model_validator(mode="after")
+    def _resolve_secret_key(self) -> "Settings":
+        if self.secret_key is not None:
+            return self
+        if self.secret_key_file is None:
+            raise ValueError("主密钥未配置：请设置 CHATBI_SECRET_KEY 或 CHATBI_SECRET_KEY_FILE")
+        if not self.secret_key_file.is_file():
+            raise ValueError(f"CHATBI_SECRET_KEY_FILE 指向的文件不存在：{self.secret_key_file}")
+        text = self.secret_key_file.read_text(encoding="utf-8").strip()
+        if not text:
+            raise ValueError("CHATBI_SECRET_KEY_FILE 指向的文件为空")
+        self.secret_key = SecretStr(text)
+        return self
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
