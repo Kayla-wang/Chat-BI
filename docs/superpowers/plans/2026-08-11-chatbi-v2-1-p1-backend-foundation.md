@@ -2017,8 +2017,13 @@ P2「数据源与三驱动」直接依赖以下签名，改动它们要回头改
 
 **配置**
 ```python
-chatbi.config.Settings          # 字段：database_url, secret_key(SecretStr), secret_key_file,
+chatbi.config.Settings          # 字段：database_url, secret_key, secret_key_file,
                                 #       cookie_secure, session_ttl_hours
+# secret_key 的声明类型是 SecretStr | None（默认 None），但 _resolve_secret_key
+# 这个 after-validator 保证实例化后必为非 None——两种来源都没有就直接 ValidationError。
+# 即：运行时可以直接 settings.secret_key.get_secret_value()，但类型检查器会报
+# Optional。P2 做凭据加密时在取值处加一次断言或 cast，不要把字段改成非可选
+# （pydantic-settings 需要 None 作为「未从环境读到」的初值）。
 chatbi.config.get_settings() -> Settings          # lru_cache；改环境变量后需 cache_clear()
 ```
 
