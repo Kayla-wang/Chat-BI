@@ -170,7 +170,8 @@ HITL 的本质是链路中间有一段**不确定时长的人类思考**：草�
 ### 2.5 Postgres 数据模型
 
 ```sql
-users(id uuid pk, email citext unique, display_name text, password_hash text,
+users(id uuid pk, email text unique, display_name text, password_hash text,   -- email 在应用层小写规范化
+
       role text check (role in ('admin','analyst','viewer')), is_active bool,
       created_at timestamptz)
 
@@ -486,3 +487,4 @@ LLM 在所有自动化测试里一律用 `FakeLLMProvider`（确定性输出）�
 5. **与 PRD 优先级的一处已知张力**：F-503 行列级权限是 P0，V2-1 只交付粗粒度 + 执行器注入点（§4.2）。已明确接受。
 6. **四个功能是降级实现**，plan 阶段不要按完整版拆任务：F-102、F-104、F-402、F-503（§0.3）。
 7. **F-303 AC2 取「禁用」分支**且定为永久决策（§4.3、§7.2），plan 里不要留二次确认的实现路径。
+8. **`users.email` 从 `citext` 改为 `text` + 应用层小写规范化**（写 P1 计划 Task 3 时回改）：citext 要额外建扩展、SQLAlchemy 的 CITEXT 类型有版本门槛，收益只是省一次 `.lower()`。规范化在 `LocalIdentityProvider` 与 admin CLI 两处入口做。
