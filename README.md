@@ -1,131 +1,65 @@
 # Chat-BI
 
-![TypeScript](https://img.shields.io/badge/TypeScript-5.4-3178C6?logo=typescript&logoColor=white)
-![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
-![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
-![Express](https://img.shields.io/badge/Express-4-000000?logo=express&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-better--sqlite3-003B57?logo=sqlite&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2-D71F00)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
 ![Ollama](https://img.shields.io/badge/LLM-Ollama-000000?logo=ollama&logoColor=white)
-![ECharts](https://img.shields.io/badge/Charts-ECharts_5-AA344D)
-![Vitest](https://img.shields.io/badge/tested_with-Vitest-6E9F18?logo=vitest&logoColor=white)
+![pytest](https://img.shields.io/badge/tested_with-pytest-0A9EDC?logo=pytest&logoColor=white)
 
-本地运行的对话式 BI:自然语言提问 → 本地 Ollama 生成只读 SQL → 查询 SQLite → 返回 ECharts 图表。数据不出本机,SQL 经白名单校验。TypeScript 全栈 monorepo(Express + SSE / React + Vite)。
+面向数据分析师/工程师的 AI 副驾：每一句由 LLM 生成的 SQL 都**看得见**（草稿与最终版可 diff）、**改得了**（结果落地前可在编辑器里改）、**存得下**（人在回路批准后执行，全链路日志可回放）。多用户、行列级权限、Postgres / MySQL / ClickHouse 三类数据源接入。
 
-- **完全离线**:LLM 跑在本地 Ollama,数据留在本地 SQLite,不需要任何云端 API key。
-- **只读兜底**:生成的 SQL 必须是 `SELECT` / `WITH ... SELECT`,禁堆叠查询、禁注释、禁写入与 DDL 关键词,自动注入 `LIMIT` 并加查询超时;执行走只读连接。
-- **自动纠错**:JSON 解析失败、SQL 校验不通过或执行报错时,带着错误原因重试一轮再放弃。
-- **图表先落地,洞察后写**:结果与图表一次性下发立刻渲染,洞察文本由第二轮 LLM 真流式逐字写出;第二轮失败只降级洞察,不影响图表。
-- **开箱即跑**:首次启动自动建表并灌入示例订单数据,不用自备数据源;界面跟随系统深浅色。
+v1（本机单用户离线问数工具，TypeScript 全栈）已作废并从工作树删除，可从本次重写提交的父节点恢复；v2 起后端换栈为 Python + FastAPI，产品定位换为面向分析师的 AI 副驾。
 
-## 运行
+## 路线图
 
-需要 Node 20+(`better-sqlite3` 12 的下限,本机 v24)与本地 Ollama。
+三段拆分，每段各走一轮 spec → plan → 实施（详见 `docs/superpowers/specs/2026-08-11-chatbi-v2-1-design.md`）：
 
-1. 拉模型:`ollama pull qwen3:8b`。Windows 下装完 Ollama 服务已随托盘常驻 11434,不用手动 `ollama serve`
-2. `npm install`
-3. 后端:`npm run dev --workspace=apps/backend`(http://localhost:5174)
-4. 前端:`npm run dev --workspace=apps/frontend`(http://localhost:5173)
+| 段 | 范围 | 退出标准 | 状态 |
+|---|---|---|---|
+| **V2-1** | 基座（认证/多用户/数据源/应用库）+ 可控链路（生成→可见→可编辑→批准→执行→日志/回放）+ 结果展示（表格 ⇄ 图表 + 下钻） | 四个核心功能端到端可用；三类数据源对真库跑通；粗粒度权限可用 | **进行中（P1：后端基座骨架）** |
+| V2-2 | 语义层（物理/业务/指标/治理四层）+ 行列级权限策略与编辑 UI + pgvector 语义检索 | 指标口径统一；行列级隔离可验证 | 未开始 |
+| V2-3 | 资产沉淀、feedback 学习、洞察文本、导出到 Notebook | 资产可复用；纠正一次后同类提问命中修正 | 未开始 |
 
-首次启动会在 `apps/backend/data/app.db` 里注册一个内置的「示例订单库」(sqlite),顶栏的数据源选择器默认选它。要接 MySQL / PostgreSQL,点顶栏右侧的「管理」进 `/datasources` 新建:填连接参数 → 「测试连接」→ 保存。选中哪个源,提问就走哪个源。
+## 本地运行
 
-模型默认值是 `llama3.1`,但验收问题全是中文,换 `qwen3:8b` 一类中文更强的模型出 SQL 更稳,用 `OLLAMA_MODEL` 指定。
+后端在 `apps/api`，需要 Python 3.12+ 与 [uv](https://docs.astral.sh/uv/)。
 
-第一轮 LLM(出 SQL)不可缺:Ollama 不可用时整轮直接返回 `error`,图表出不来;只有第二轮洞察会降级(见验收清单第 8 条)。
+### 1. 准备 Postgres
 
-`DB_PATH` 默认是相对路径,后端必须以 `apps/backend` 为工作目录启动 —— 上面的 `--workspace=` 命令即可;从仓库根直接 `tsx apps/backend/src/server.ts` 会在根目录另建一个空库重新灌数据。根目录的 `npm run dev` 用 `&` 同时起两个进程,只在 bash 下有效,PowerShell/cmd 请开两个终端。
+二选一：
 
-## 配置
+- **原生 Postgres**（推荐用于本地开发）：确保本机 5432 端口有 Postgres，用户 `chatbi` / 密码 `chatbi`，并已建好 `chatbi`、`chatbi_test` 两个数据库。
+- **Docker Compose**：`docker compose -f docker/compose.yml up -d` 会拉起 `app-postgres`（宿主端口映射到 **5433**，避免与原生 Postgres 冲突）与 `ollama` 两个服务；连接字符串里的端口相应改成 5433。
 
-| 环境变量 | 默认值 | 说明 |
-|---|---|---|
-| `PORT` | `5174` | 后端监听端口;前端用 `BACKEND_PORT`(回落到 `PORT`)决定 `/api` 代理指向 |
-| `DB_PATH` | `./data/chatbi.db` | SQLite 示例库路径(首次启动自动建表 + 灌示例数据) |
-| `OLLAMA_URL` | `http://localhost:11434` | Ollama 服务地址 |
-| `OLLAMA_MODEL` | `llama3.1` | 使用的模型 |
-| `QUERY_TIMEOUT_MS` | `5000` | 单次查询超时 |
-| `ROW_LIMIT` | `1000` | 返回行数上限(自动注入 `LIMIT`) |
-| `INSIGHT_TIMEOUT_MS` | `8000` | 洞察生成(第二轮 LLM)超时,超时降级为模板文本 |
-
-配置直接读 `process.env`,没有接 dotenv —— `.env` 文件不会被加载,临时覆盖写在命令前:
+### 2. 装依赖并起服务
 
 ```bash
-OLLAMA_MODEL=qwen3:8b INSIGHT_TIMEOUT_MS=30000 npm run dev --workspace=apps/backend
+cd apps/api
+uv sync
+export CHATBI_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi
+export CHATBI_SECRET_KEY=dev-only-not-for-production
+uv run uvicorn chatbi.main:app --reload
 ```
 
-纯 CPU 推理时第二轮洞察几乎必然撞上 `INSIGHT_TIMEOUT_MS` 降级成模板文本,先调到 30000 以上再判断洞察功能是否正常。
-
-后端端口被占用时(常见于本机同时跑别的 Vite 项目)换一个,两个进程用同一个变量即可:
-
-```bash
-PORT=5175 npm run dev --workspace=apps/backend
-PORT=5175 npm run dev --workspace=apps/frontend   # vite 只读它来定代理目标,自身仍是 5173
-```
-
-前端 dev server 端口固定 5173,若被占用 Vite 会自动往上找(5174、5175……),看它启动时打印的地址。
-
-## 结构
-
-```
-apps/backend      Express + SSE:promptBuilder → sqlGuard → dbClient → chartSpec/facts → insightWriter
-apps/frontend     React + Vite:AppShell / ChatWindow / ResultCard(图表·表格·SQL)/ InsightPanel
-packages/shared   契约与纯函数:types(ChartSpec、StreamEvent)、format、renderer(ChartSpec → ECharts option)、facts
-docs/superpowers  设计 spec 与实施计划
-```
-
-一次问答的事件流:`result`(图表 + 表格 + SQL 一次下发)→ `insightFacts`(后端纯函数算出的事实)→ `insightDelta` × N(第二轮 LLM 逐字)→ `done`;任一步出错发 `error`。图表以 `ChartSpec` 为单一来源,ECharts option 只在 `packages/shared/src/renderer.ts` 生成一处。
+启动后 `GET http://localhost:8000/health` 应返回 `{"status": "ok"}`。
 
 ## 测试
 
 ```bash
-npm test                               # 全仓 46 文件 / 551 测试 + 3 skipped(复用各工作区自己的配置)
-npx vitest --root apps/backend run     # 后端 373(+3 skipped:MySQL / PG 契约测试需要真库)
-npx vitest --root apps/frontend run    # 前端 149
-npx vitest --root packages/shared run  # 共享 29
+cd apps/api
+export TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi_test
+export CHATBI_SECRET_KEY=dev-only-not-for-production
+uv run pytest
 ```
 
-测试不需要 Ollama,也不需要真实网络:`fetch` 与 llm 依赖都是注入的桩。
+当前阶段（P1）只有 `/health` 的骨架测试，不依赖数据库；后续任务引入数据库相关测试后需要 `TEST_DATABASE_URL` 指向的 `chatbi_test` 库可写。
 
-Windows 下偶发 `No test suite found in file ...`(文件被收集到但报 0 个测试):vitest 1.6 worker 收集阶段的 flake,与并发/机器负载相关 —— 观测到的失败都发生在有其它进程同时跑 vitest 的时候,且失败那次 collect 耗时是正常值的两倍以上。不是代码问题,单独重跑一次即可,尽量别让两个 vitest 进程并行。
+## 结构
 
-## 手动验收清单
-
-### A. P1 回归(在「示例订单库」上问,9 条原样)
-
-发版前依次问,人工确认图表类型、数据与洞察:
-
-1. 「按月统计订单金额」→ 折线图,x 轴按月排序,洞察提到趋势百分比
-2. 「各产品类别销售额占比」→ 饼图,洞察提到头部占比
-3. 「各地区订单总额对比」→ 柱状图
-4. 「按月看各区域销售额」→ 多条折线,图例是区域名
-5. 「各区域各类别销售额占比结构」→ 百分比堆叠柱状图,y 轴 0–100%
-6. 三轮下钻:「按月统计订单金额」→「只看华东区」→「按周看」,每轮图表都正确变化
-7. 「查询 1999 年的订单」→ 空表格 + 洞察「没有符合条件的记录」
-8. 关掉 Ollama 后再问一次 → 图表仍渲染,洞察降级为模板文本(验证第二轮失败不影响第一轮)
-9. 任意一轮展开「查看 SQL」与「计算依据」,核对 SQL 与洞察里的数字一致
-
-### B. P2a 数据源相关
-
-完整的 15 条在 [P2a 设计 spec 第 12 节](docs/superpowers/specs/2026-07-31-chatbi-p2-datasource-design.md)(含真库方言、错误提示、超时、凭据落盘检查),那份是唯一出处,别在这里抄第二份。每次发版至少跑这三条最小回归:
-
-1. 在 A 源做完一轮下钻,切到 B 源 → 会话里出现「已切换到数据源 B」分隔提示,下一问的 SQL **不是**在 A 的 SQL 上改写(展开「查看 SQL」确认)
-2. `strings apps/backend/data/app.db | grep <你填的数据库密码>` → 无命中
-3. 删除一个数据源 → 二次确认提到「引用它的看板卡片会失效」,删除后 `schema_cache` 里对应行也没了
-
-## 界面
-
-- 设计 tokens 集中在 `apps/frontend/src/theme/tokens.css`,组件通过 CSS 变量取色,不写颜色字面量。
-- 深浅色跟随系统 `prefers-color-scheme`,不提供手动开关。
-- 图表调色板取 Okabe-Ito 色觉友好色系派生(`theme/chartPalette.ts`),浅色深色各一套 8 色。
-- 涨跌不用颜色表达——中式涨红跌绿与国际涨绿跌红相反,统一用文字说明,避免误读。
-- 数字统一 `tabular-nums` 等宽对齐(表格、坐标轴、洞察)。
-
-## 已知限制
-
-- SQL 校验以只读数据库连接为根本防线;AST 校验(`node-sql-parser`,sqlite 方言)解析失败时回退到加固正则。实测示例库的全部验收查询(含 `strftime`、多表 JOIN + GROUP BY、`LIKE` 过滤)均走 AST 路径,未触发正则回退。
-- 洞察文本由 LLM 措辞,数字由后端纯函数计算。若怀疑措辞与数字不符,展开「计算依据」核对。
-- `seriesBy` 取值超过 12 个(`SERIES_BY_MAX`)时自动退化为单系列,并在图表下方标注。
-- 第一轮 LLM 调用没有超时保护(`llmClient` 是裸 `fetch`),模型很慢时 SSE 会一直挂着、既不出图也不报错。只有第二轮洞察有 `INSIGHT_TIMEOUT_MS`;`QUERY_TIMEOUT_MS` 只管 SQLite 执行,与 LLM 无关。
-- `npm run build` 只产出前端静态文件,后端只挂了 `/api/chat`、不托管它们,离开 Vite dev server 需要自己加静态服务或反向代理。
-- 前端现在是 `BrowserRouter` 两条路由(`/` 与 `/datasources`)。Vite dev server 自带 history fallback,但换成任何静态托管(nginx、`serve`、Caddy)都必须把未命中的路径重写到 `index.html`,否则刷新 `/datasources` 会 404。P2c 的分享页 `/s/:token` 同理。
-- 数据源列表与选中项在前端是内存 + `localStorage`(键 `chatbi.selectedDataSourceId`)。多标签页同时改数据源不会互相同步,刷新后以服务端列表为准。
-- 管理页的连接测试是同步等待的:填了不可达的地址时,「测试连接」会挂到后端超时(`QUERY_TIMEOUT_MS`)才给结果。
+```
+apps/api            Python 3.12 + FastAPI + SQLAlchemy 2 + Alembic
+docker/compose.yml   app-postgres（宿主 5433）· ollama（11434），P1 阶段只写不跑
+docs/                产品与技术设计文档
+docs/superpowers/    spec 与实施计划（SDD 流程产物）
+```
