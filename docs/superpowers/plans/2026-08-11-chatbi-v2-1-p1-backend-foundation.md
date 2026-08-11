@@ -44,6 +44,22 @@
 **契约**
 - Pydantic 模型是 OpenAPI 唯一真相源（spec §0.4）。P1 不生成前端类型（P4 才有前端），但路由必须带完整的 `response_model` 与 `responses` 声明，否则 P4 生成的类型会缺字段。
 
+## 本机环境（2026-08-11 实测，实施时照此执行）
+
+工具链已装好：Python 3.12.10、uv 0.12.2、Docker CLI 29.6.2、PostgreSQL 16.14。
+
+**Docker 守护进程在本机尚不可用**——Docker Desktop 已安装，但 WSL2 无发行版、功能未启用，需要管理员跑 `wsl --install` + 重启 + 手动首次启动接受许可。因此：
+
+- `docker/compose.yml` 照 Task 1 Step 2 **写出来但不要运行**，也不要在 P1 里验证它。它服务于部署与 P2 的三驱动契约测。
+- P1 的应用库用**本机原生 PostgreSQL 16**，监听 `5432`，账号 `chatbi` / 密码 `chatbi`，`chatbi` 与 `chatbi_test` 两个库已建好并验证可连。
+- 因此本计划所有开发/测试命令用 **5432**，而 compose 保持映射 **5433**（有意错开：宿主 5432 已被原生实例占用）。`config.py` 的默认 `database_url` 指向 5432 以贴合本机；P2 起 Docker 后改用环境变量覆盖即可。
+
+```bash
+export TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi_test
+export CHATBI_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi
+export CHATBI_SECRET_KEY=dev-only-not-for-production
+```
+
 **流程**
 - TDD：每个任务先写失败的测试，跑一次确认失败，再写最小实现，跑一次确认通过，然后提交。
 - 提交信息用 `feat:` / `test:` / `chore:` / `docs:` 前缀，末尾带 `Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>`。
@@ -151,7 +167,9 @@ volumes:
   ollama:
 ```
 
-宿主端口用 5433 而非 5432，避免与开发机上已有的 Postgres 抢端口。
+宿主端口用 5433 而非 5432，避免与开发机上已有的原生 Postgres 抢端口。
+
+> **本任务只写这个文件，不要运行 `docker compose up`。** 本机 Docker 守护进程尚不可用（见「本机环境」），P1 用原生 Postgres。这个文件到 P2 才会被真正跑起来。
 
 创建 `docker/initdb/01-create-test-db.sql`：
 
@@ -259,7 +277,7 @@ __pycache__/
 .ruff_cache/
 ```
 
-`README.md` 重写为 V2-1 内容：产品定位一段（分析师 AI 副驾，SQL 看得见/改得了/存得下）、四段路线图表（V2-1 到 V2-3，标注当前进度 P1）、本地起服务步骤（`docker compose -f docker/compose.yml up -d`、`cd apps/api && uv sync`、`uv run uvicorn chatbi.main:app --reload`）、跑测试步骤（含 `TEST_DATABASE_URL` 的导出命令）。不要保留任何 v1 的 npm 命令说明。
+`README.md` 重写为 V2-1 内容：产品定位一段（分析师 AI 副驾，SQL 看得见/改得了/存得下）、四段路线图表（V2-1 到 V2-3，标注当前进度 P1）、本地起服务步骤（原生 Postgres 或 compose、`cd apps/api && uv sync`、`uv run uvicorn chatbi.main:app --reload`）、跑测试步骤（含 `TEST_DATABASE_URL` 的导出命令）。不要保留任何 v1 的 npm 命令说明。
 
 - [ ] **Step 9: 提交**
 
@@ -372,7 +390,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CHATBI_", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi"
+    database_url: str = "postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi"
     secret_key: SecretStr | None = None
     secret_key_file: Path | None = None
     cookie_secure: bool = False
@@ -636,9 +654,8 @@ def _test_env() -> None:
     if not url:
         pytest.fail(
             "TEST_DATABASE_URL 未设置。应用库测试不允许 skip——没有应用库这个后端无功能可测。\n"
-            "  docker compose -f docker/compose.yml up -d app-postgres\n"
             "  export TEST_DATABASE_URL="
-            "postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi_test",
+            "postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi_test",
             pytrace=False,
         )
     db_name = url.rsplit("/", 1)[-1].split("?")[0]
@@ -726,8 +743,7 @@ def test_migrations_roundtrip(_migrated: None) -> None:
 - [ ] **Step 5: 跑测试确认通过**
 
 ```bash
-docker compose -f ../../docker/compose.yml up -d app-postgres
-export TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi_test
+export TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi_test
 cd apps/api && uv run pytest -v
 ```
 
@@ -736,7 +752,7 @@ Expected: PASS（Task 1–3 的全部测试，6 passed 以上）
 - [ ] **Step 6: 验证守卫生效**
 
 ```bash
-cd apps/api && TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi uv run pytest -x
+cd apps/api && TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi uv run pytest -x
 ```
 
 Expected: 立即失败并打印「库名必须以 `_test` 结尾」，**且 `chatbi` 库未被改动**。跑完把环境变量改回 `chatbi_test`。
@@ -1960,7 +1976,7 @@ Expected: PASS（全套，约 42 条）
 
 ```bash
 cd apps/api
-export CHATBI_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi
+export CHATBI_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi
 export CHATBI_SECRET_KEY=dev-only-not-for-production
 uv run alembic upgrade head
 uv run python -m chatbi.cli create-user admin@local 管理员 --role admin
