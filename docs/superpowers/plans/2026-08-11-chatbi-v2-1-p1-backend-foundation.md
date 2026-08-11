@@ -97,6 +97,7 @@ export CHATBI_SECRET_KEY=dev-only-not-for-production
 | `apps/api/src/chatbi/api/auth_router.py` | `/api/auth/login`、`/logout`、`/me` |
 | `apps/api/src/chatbi/cli.py` | `create-admin` 等管理命令（typer） |
 | `apps/api/tests/conftest.py` | 测试库夹具、`_test` 库名守卫、事务回滚、`client` |
+| `apps/api/tests/test_fixture_isolation.py` | 回归测：内层 `commit()` 不得泄漏到下一个测试 |
 | `apps/api/tests/test_health.py` | `/health` |
 | `apps/api/tests/test_config.py` | 配置与主密钥加载 |
 | `apps/api/tests/test_migrations.py` | up/down 双向 |
@@ -677,11 +678,21 @@ def _migrated(_test_env: None) -> None:
 
 @pytest.fixture
 def db_session(_migrated: None) -> Iterator[Session]:
-    """每个测试跑在一个最终回滚的事务里，测试之间互不可见。"""
+    """每个测试跑在一个最终回滚的事务里，测试之间互不可见。
+
+    join_transaction_mode="create_savepoint" 是把已有行为钉死，不是修 bug：
+    SQLAlchemy 2.x 的默认值 conditional_savepoint 在「连接已有显式事务」时
+    本来就会建 SAVEPOINT，所以内层 commit 不会击穿外层事务（实测 2.0.51 如此，
+    未加此参数时回归测试同样通过）。显式写出来是为了不依赖库的默认值，也为了
+    读代码的人不必去查 conditional 的判定条件。不要退回手写 begin_nested() +
+    after_transaction_end 监听器的旧配方——那是 SQLAlchemy 2.0 之前的写法。
+    """
     engine = create_engine(os.environ["CHATBI_DATABASE_URL"])
     connection = engine.connect()
     transaction = connection.begin()
-    session = sessionmaker(bind=connection, expire_on_commit=False)()
+    session = sessionmaker(
+        bind=connection, expire_on_commit=False, join_transaction_mode="create_savepoint"
+    )()
     try:
         yield session
     finally:
