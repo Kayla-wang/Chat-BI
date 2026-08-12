@@ -924,6 +924,7 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
+from chatbi.auth import identity
 from chatbi.auth.hashing import hash_password
 from chatbi.auth.identity import LocalIdentityProvider, normalize_email
 from chatbi.db.models import User
@@ -981,14 +982,31 @@ def test_rejects_a_disabled_account(db_session: Session, provider) -> None:
     assert provider.authenticate(db_session, "gone@example.com", "pw-12345678") is None
 
 
-def test_unknown_email_and_wrong_password_are_indistinguishable(
-    db_session: Session, provider
+def test_every_failure_path_does_exactly_one_verification(
+    db_session: Session, provider, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """两种失败都返回 None，调用方无法据此判断账号是否存在（防用户名枚举）。"""
-    _make_user(db_session, email="ann@example.com", password="pw-12345678")
+    """三条失败路径都必须恰好做一次密码校验。
 
-    assert provider.authenticate(db_session, "ann@example.com", "wrong") is None
-    assert provider.authenticate(db_session, "nobody@example.com", "wrong") is None
+    否则某条路径会比其他路径快一个 Argon2 的时间，攻击者据此能区分
+    「账号不存在」「密码错」「账号被禁用」——这正是 _DUMMY_HASH 要防的事。
+    这里数调用次数而不是测耗时：计时断言必然不稳。
+    """
+    calls: list[str] = []
+    real_verify = identity.verify_password
+
+    def counting_verify(plaintext: str, hashed: str) -> bool:
+        calls.append(hashed)
+        return real_verify(plaintext, hashed)
+
+    monkeypatch.setattr(identity, "verify_password", counting_verify)
+
+    _make_user(db_session, email="active@example.com", password="pw-12345678")
+    _make_user(db_session, email="disabled@example.com", password="pw-12345678", is_active=False)
+
+    for email in ("nobody@example.com", "active@example.com", "disabled@example.com"):
+        calls.clear()
+        assert provider.authenticate(db_session, email, "wrong-password") is None
+        assert len(calls) == 1, f"{email} 走了 {len(calls)} 次校验"
 ```
 
 - [ ] **Step 2: 跑测试确认失败**
@@ -1029,9 +1047,10 @@ class LocalIdentityProvider:
         if user is None:
             verify_password(password, _DUMMY_HASH)
             return None
-        if not user.is_active:
-            return None
-        if not verify_password(password, user.password_hash):
+        password_ok = verify_password(password, user.password_hash)
+        # is_active 的判断必须在校验之后：提前 return 会让「存在但被禁用」
+        # 比其他失败路径快一个 Argon2 的时间，等于把账号状态泄漏给计时攻击。
+        if not password_ok or not user.is_active:
             return None
         return user
 
