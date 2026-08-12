@@ -26,3 +26,12 @@ def test_verify_rejects_a_malformed_hash_without_raising() -> None:
 
 def test_same_password_hashes_differently() -> None:
     assert hash_password("same") != hash_password("same")
+
+
+def test_verify_rejects_a_none_hash_without_raising() -> None:
+    """库里 password_hash 为 NULL 这类脏数据不能把登录路径打成 500。"""
+    assert verify_password("anything", None) is False  # type: ignore[arg-type]
+
+
+def test_verify_rejects_an_empty_hash_without_raising() -> None:
+    assert verify_password("anything", "") is False
