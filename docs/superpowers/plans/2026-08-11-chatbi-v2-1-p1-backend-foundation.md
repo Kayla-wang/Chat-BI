@@ -825,6 +825,15 @@ def test_verify_rejects_a_malformed_hash_without_raising() -> None:
     assert verify_password("anything", "not-a-hash") is False
 
 
+def test_verify_rejects_a_none_hash_without_raising() -> None:
+    """库里 password_hash 为 NULL 这类脏数据不能把登录路径打成 500。"""
+    assert verify_password("anything", None) is False  # type: ignore[arg-type]
+
+
+def test_verify_rejects_an_empty_hash_without_raising() -> None:
+    assert verify_password("anything", "") is False
+
+
 def test_same_password_hashes_differently() -> None:
     assert hash_password("same") != hash_password("same")
 ```
@@ -852,8 +861,18 @@ def hash_password(plaintext: str) -> str:
 
 
 def verify_password(plaintext: str, hashed: str) -> bool:
-    """密码是否匹配。哈希串损坏时返回 False 而不是抛异常——
-    调用方在登录路径上，不该因为库里一条脏数据就 500。"""
+    """密码是否匹配。
+
+    哈希串损坏时返回 False 而不是抛异常——调用方在登录路径上，不该因为库里
+    一条脏数据就 500。这里只对「存储的哈希」宽容：非字符串或空串直接判为不匹配。
+    plaintext 的类型错误仍然让它抛出去，那是调用方的 bug，不该被静默吞掉。
+
+    不要用 except (AttributeError, TypeError) 代替下面这个 isinstance 守卫：
+    argon2-cffi 对 None/非字符串哈希抛的是 AttributeError，捕获它会连「两个
+    参数传反了」这类真 bug 一起吞掉。
+    """
+    if not isinstance(hashed, str) or not hashed:
+        return False
     try:
         return _hasher.verify(hashed, plaintext)
     except (Argon2Error, InvalidHashError):
@@ -863,7 +882,7 @@ def verify_password(plaintext: str, hashed: str) -> bool:
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `cd apps/api && uv run pytest tests/test_hashing.py -v`
-Expected: PASS（5 passed）
+Expected: PASS（7 passed）
 
 - [ ] **Step 5: 提交**
 
