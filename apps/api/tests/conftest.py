@@ -66,3 +66,35 @@ def client(db_session: Session) -> Iterator[TestClient]:
         yield TestClient(app)
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def make_user(db_session: Session):
+    """建一个测试用户。默认 analyst 角色、启用状态。"""
+    import uuid
+
+    from chatbi.auth.hashing import hash_password
+    from chatbi.auth.identity import normalize_email
+    from chatbi.db.models import User
+
+    def _make(
+        *,
+        email: str | None = None,
+        password: str = "pw-12345678",
+        display_name: str = "测试用户",
+        role: str = "analyst",
+        is_active: bool = True,
+    ) -> User:
+        user = User(
+            id=uuid.uuid4(),
+            email=normalize_email(email or f"u-{uuid.uuid4().hex[:8]}@example.com"),
+            display_name=display_name,
+            password_hash=hash_password(password),
+            role=role,
+            is_active=is_active,
+        )
+        db_session.add(user)
+        db_session.flush()
+        return user
+
+    return _make
