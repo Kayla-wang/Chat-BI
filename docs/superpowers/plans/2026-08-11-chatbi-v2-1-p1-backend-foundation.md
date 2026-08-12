@@ -112,7 +112,7 @@ export CHATBI_SECRET_KEY=dev-only-not-for-production
 
 ### 边界说明
 
-`auth/` 内四个文件各司一职，互不越界：`hashing` 只做密码学、不碰 DB；`identity` 只回答「这对凭据属于哪个启用中的用户」、不管 cookie；`sessions` 只管会话记录的生命周期、不认识密码；`deps` 只做 FastAPI 依赖装配、不含判断逻辑。`api/auth_router.py` 只做 HTTP 编排（读 cookie、设 cookie、转错误码），业务判断全在上述模块里——这样认证语义能脱离 HTTP 测（spec §1.3 规则 2）。
+`auth/` 内四个文件各司一职，互不越界：`hashing` 只做密码学、不碰 DB；`identity` 只回答「这对凭据属于哪个启用中的用户」、不管 cookie；`sessions` 只管会话记录的生命周期、不认识密码；`deps` 只做 FastAPI 依赖装配与**授权判断**（`require_role` 的角色比较就在这里），不含认证语义——「这对凭据属于谁」归 `identity`，「这个会话还有效吗」归 `sessions`。`api/auth_router.py` 只做 HTTP 编排（读 cookie、设 cookie、转错误码），业务判断全在上述模块里——这样认证语义能脱离 HTTP 测（spec §1.3 规则 2）。
 
 ---
 
