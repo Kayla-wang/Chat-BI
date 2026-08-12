@@ -26,9 +26,10 @@ class LocalIdentityProvider:
         if user is None:
             verify_password(password, _DUMMY_HASH)
             return None
-        if not user.is_active:
-            return None
-        if not verify_password(password, user.password_hash):
+        password_ok = verify_password(password, user.password_hash)
+        # is_active 的判断必须在校验之后：提前 return 会让「存在但被禁用」
+        # 比其他失败路径快一个 Argon2 的时间，等于把账号状态泄漏给计时攻击。
+        if not password_ok or not user.is_active:
             return None
         return user
 
