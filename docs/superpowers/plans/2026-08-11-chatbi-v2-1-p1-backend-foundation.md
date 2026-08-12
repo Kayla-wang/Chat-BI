@@ -1971,6 +1971,16 @@ from chatbi.errors import ApiError
 app = typer.Typer(help="Chat-BI 管理命令")
 
 
+@app.callback()
+def _root() -> None:
+    """空回调，作用是强制 typer 走 Group 分支。
+
+    typer 0.27 在「只注册了一个命令且没有 callback」时会把应用折叠成裸
+    Command，于是 `create-user` 不再是子命令名，而被当成第一个位置参数
+    （email）吞掉。P2 加第二个命令后这个条件不再成立，此回调自动变为无害。
+    """
+
+
 @contextmanager
 def _session_scope() -> Iterator[Session]:
     session = get_session_factory()()
