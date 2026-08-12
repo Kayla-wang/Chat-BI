@@ -44,6 +44,18 @@ uv run uvicorn chatbi.main:app --reload
 
 启动后 `GET http://localhost:8000/health` 应返回 `{"status": "ok"}`。
 
+### 3. 首次部署创建管理员
+
+私有化部署不开放注册页面，账号由管理员用 CLI 发：
+
+```bash
+cd apps/api
+export CHATBI_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi
+export CHATBI_SECRET_KEY=dev-only-not-for-production
+uv run alembic upgrade head
+uv run python -m chatbi.cli create-user admin@local 管理员 --role admin
+```
+
 ## 测试
 
 ```bash
