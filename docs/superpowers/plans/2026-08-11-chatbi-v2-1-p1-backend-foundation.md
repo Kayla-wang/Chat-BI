@@ -2167,3 +2167,57 @@ P1 不覆盖、留给后续段的 spec 条目：`datasources` / `guard` / `execu
 - `sessions` 表没有「一个用户最多几个活跃会话」的上限。私有化单机场景下不做限制，`purge_expired` 足够；若将来暴露到公网需要补。
 
 **类型一致性核对**：`normalize_email` / `make_user` / `create_session` / `SESSION_COOKIE` / `require_role` / `ROLES` / `ApiError.code` 在跨任务引用处的名称与签名已逐一对齐，无 Task N 定义、Task M 改名的情况。
+
+---
+
+## 10. 实施期的偏差与遗留（2026-08-13 P1 实施完毕后回填）
+
+九个任务全部实施完成，`53 passed`。三个任务进了修复轮（Task 3 两轮、Task 4 与 Task 5 各一轮），最终全分支审查提出 4 条 must-fix，已修完并过 scoped 再审（commit `1ee15ef`）。下面是 P2 接手前该知道的全部内容。
+
+### 10.1 实施中改掉的计划内容（已同步进上文）
+
+| 项 | 原计划 | 改成 | 原因 |
+|---|---|---|---|
+| `users.email` | `citext` | `text` + 应用层 `normalize_email` | 省一次 `.lower()` 不值得多建扩展、多一个版本门槛 |
+| migration boolean 默认值 | `sa.true()` | `sa.text("true")` | 前者在部分 Alembic 版本下渲染不稳 |
+| `verify_password` | 只 `except (Argon2Error, InvalidHashError)` | 加 `isinstance` 守卫存储哈希 | argon2-cffi 对 `None`/非字符串哈希抛未捕获的 `AttributeError`，「脏数据不该 500」的承诺没做到；不放宽 `except` 是为了不吞掉参数传反这类真 bug |
+| `authenticate` | 先判 `is_active` 再校验密码 | 校验之后再判 | 提前 return 让「存在但被禁用」快一个 Argon2，形成时序侧信道 |
+| 反枚举测试 | 断言两种失败都返回 `None` | monkeypatch 计数三条失败路径各一次校验 | 原测试删掉防御照样通过，等于没测 |
+| `cli.py` | 无 callback | 加空 `@app.callback()` | typer 0.27 单命令且无 callback 时折叠成裸 Command，`create-user` 被当成位置参数吞掉 |
+| `cookie_secure` | 默认 `False` | 默认 `True`，本地 HTTP 开发用 `CHATBI_COOKIE_SECURE=0` 退出 | spec §4.1 要求生产带 `Secure`，默认必须 fail-closed |
+| `login` / `logout` | 只 `flush()`，靠 `get_db` 退出时 commit | 显式 `db.commit()` | 交给客户端的 cookie 必须在响应发出前持久，不能是「顺带持久」 |
+| `login` | 不管调用方带来的旧 cookie | 先 `delete_session` 再建新会话 | 会话固定：预置的 cookie 会成为第二个有效凭据；顺带给会话累积封了口 |
+
+### 10.2 一条被证伪的审查发现（不要重复"修"它）
+
+Task 3 的审查报了 Important：「`db_session` 夹具的回滚会被内层 `commit()` 击穿」。**在 SQLAlchemy 2.x 上不成立**——默认 `join_transaction_mode="conditional_savepoint"` 在本夹具形状下已保证隔离，实测 2.0.51 未加参数时回归测试同样通过。显式写 `create_savepoint` 只是钉死行为、不依赖库默认值，不是修 bug。
+
+这条是靠「要求实施者也对未修复版本跑一遍」才发现的。**后续段沿用这个做法**：覆盖测试必须两个方向都验证，否则可能写进一段错误的技术解释并被下一份计划照抄。
+
+### 10.3 P2 应当处理的遗留
+
+1. **`purge_expired` 无调用方**（`auth/sessions.py`）——P2 第一个任务就在登录路径上接掉，不要再往后拖。
+2. **`get_identity_provider()` 不是 FastAPI 依赖**，每次调用新建实例，P2 无法像覆盖 `get_db` 那样在测试里替换它。做 OIDC 之前先改成 `Depends(get_identity_provider)`。
+3. **`create_user` 的重复邮箱检查是 check-then-insert**，未捕获 `IntegrityError`。DB 侧有唯一索引所以数据安全，错的只是错误表面。P2 把开号挂到 HTTP 端点上时补 `IntegrityError` → `EMAIL_ALREADY_EXISTS`。
+4. **`_DUMMY_HASH` 在模块导入时算一次 Argon2**（`auth/identity.py`）——CLI 与 pytest 收集都要付。改成 `functools.cache` 惰性化。
+5. **`USER_NOT_FOUND` 定义了没人用**（`errors.py`）——P2 的用户/数据源端点要么用上，要么删掉。
+6. **`logout` 的 `delete_cookie` 没重述 `httponly`/`samesite`/`secure`**——按 RFC 6265 无害，但部分浏览器对属性不匹配的删除更挑，动到 router 时一并补。
+7. **`.gitignore` 还留着 JS 时代条目**——只删 `*.db*` 与 `data/`；`node_modules/`、`dist/` 到 P4 有前端后又会需要。
+8. **`api/` 没有 router 注册接缝**，`main.py` 直接 import 单个 router。P2/P3 每加一个 router 都要改 `main.py`，可接受但会有 churn。
+
+### 10.4 记录在案的取舍与已知盲区
+
+- **测试覆盖的三个接缝**：① 真实 `get_db` 的 commit/rollback 生命周期——已被新增的 `test_login_durability.py` 覆盖；② `main.py` 的装配——`role_client` 夹具自己重新注册了异常处理器，会掩盖真 app 上注册失效的情况，值得补一条「真 app 的 401 返回 `{code,message}` 信封」的测试；③ `Settings` 在真 app 下的启动失败（缺主密钥）从未被端到端观察到。
+- **`conftest.py` 的 `CHATBI_COOKIE_SECURE` 用 `setdefault`**：操作者 shell 里若已导出 `=1`，测试默认不会覆盖它，所有 cookie 往返测试会挂在 `TestClient` 的明文 HTTP jar 上。与既有的 `CHATBI_SECRET_KEY` 写法一致，但不是零风险。
+- **`login` 新增的 cookie 参数会进 OpenAPI**，P4 生成前端类型时可能多出一个可选参数，到时留意。
+- **`delete_session` 没有归属校验**（按 id 删），`logout` 本来就这样，`login` 现在共享同一特性；但只有在调用方自己凭据认证成功后才可达，且 id 是 UUID。
+- **`_parse_id` 捕获 `(ValueError, AttributeError, TypeError)` 偏宽**（`auth/sessions.py`）——未来若有调用点因真 bug 传了非字符串，会被静默当成无效会话。
+- **`purge_expired` 用 `result.rowcount or 0`**，对 psycopg 的 DELETE 可靠，非所有方言都保证；本项目栈固定 Postgres。
+- **Windows 隐藏输入的传输层未验证**：`create-user` 的交互式双次输密码由 `CliRunner` 覆盖，但它不走 `msvcrt`，所以真 TTY 下的隐藏输入没被端到端跑过。Task 9 的那次真跑用了 `--password`（一次性本地开发凭据），因为 Windows 的 `getpass` 读不到管道 stdin。
+- **不能加 `pytest-xdist`**：`test_migrations.py` 会短暂把库降到空表，并行会互相清表。
+- **`test_health.py` 的断言是路由硬编码返回值的回声**，只能挡住路由被删；永久忽略。
+- **`test_fixture_isolation.py` 的 `control_fully` 分支会触发一条无害 `SAWarning`**（对已结束事务调 rollback）。
+
+### 10.5 P1 未覆盖、留给后续段的 spec 条目
+
+`datasources` / `guard` / `execution` / `llm` / `semantics` / `pipeline` / `runs` 七个模块、两条 SSE、审计与 `run_events`、OpenAPI 漂移校验（P4 有前端后才有意义）、`demo_sales` 示例库。spec §1.3 的边界规则 1（`guard` 是唯一放行 SQL 的地方）与规则 3（`llm` 与 `semantics` 互不知晓）在 P1 尚无对应模块，属未被检验而非已被破坏。
