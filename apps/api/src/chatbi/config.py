@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi"
     secret_key: SecretStr | None = None
     secret_key_file: Path | None = None
-    cookie_secure: bool = False
+    # 默认失败即安全：生产环境必须带 Secure。本地 HTTP 开发通过
+    # CHATBI_COOKIE_SECURE=0 显式关闭。
+    cookie_secure: bool = True
     session_ttl_hours: int = 12
 
     @model_validator(mode="after")

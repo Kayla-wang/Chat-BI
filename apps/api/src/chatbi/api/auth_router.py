@@ -20,10 +20,15 @@ def login(
     payload: LoginRequest,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
+    chatbi_session: Annotated[str | None, Cookie()] = None,
 ) -> User:
     user = get_identity_provider().authenticate(db, payload.email, payload.password)
     if user is None:
         raise ApiError(*INVALID_CREDENTIALS)
+    # 防会话固定：调用方带来的旧会话（可能是攻击者预置的）作废，
+    # 避免它在新登录之后仍作为第二个有效凭据存在。
+    if chatbi_session:
+        delete_session(db, chatbi_session)
     record = create_session(db, user)
     settings = get_settings()
     response.set_cookie(
@@ -35,6 +40,8 @@ def login(
         max_age=settings.session_ttl_hours * 3600,
         path="/",
     )
+    # 交给客户端的 cookie 必须先落盘，而不是靠 get_db 事后提交才碰巧持久化。
+    db.commit()
     return user
 
 
@@ -46,6 +53,8 @@ def logout(
 ) -> None:
     if chatbi_session:
         delete_session(db, chatbi_session)
+        # 承诺给客户端的失效必须先落盘，而不是靠 get_db 事后提交才碰巧持久化。
+        db.commit()
     response.delete_cookie(SESSION_COOKIE, path="/")
 
 

@@ -30,6 +30,9 @@ def _test_env() -> None:
         )
     os.environ["CHATBI_DATABASE_URL"] = url
     os.environ.setdefault("CHATBI_SECRET_KEY", "test-secret-key-not-for-production")
+    # TestClient 走的是 http://testserver（纯 HTTP），带 Secure 属性的 cookie
+    # 客户端不会回传，登录后的 /me 断言会假性失败。测试环境显式关闭它。
+    os.environ.setdefault("CHATBI_COOKIE_SECURE", "0")
 
 
 @pytest.fixture(scope="session", autouse=True)
