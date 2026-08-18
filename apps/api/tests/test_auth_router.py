@@ -122,3 +122,64 @@ def test_secure_attribute_is_set_when_configured(
         assert "Secure" in response.headers["set-cookie"]
     finally:
         get_settings.cache_clear()
+
+
+def test_login_purges_expired_sessions(client: TestClient, db_session, make_user) -> None:
+    """P1 §10.3 遗留 1：purge_expired 终于有调用方，过期行不再无限堆积。"""
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    from chatbi.db.models import UserSession
+
+    user = make_user(email="ann@example.com", password="pw-12345678")
+    stale = UserSession(
+        id=uuid.uuid4(), user_id=user.id, expires_at=datetime.now(UTC) - timedelta(hours=1)
+    )
+    db_session.add(stale)
+    db_session.flush()
+
+    response = client.post(
+        "/api/auth/login", json={"email": "ann@example.com", "password": "pw-12345678"}
+    )
+
+    assert response.status_code == 200
+    # expire_all 后 get() 必然回库查一次，不会读到身份映射里的旧对象而假性通过
+    db_session.expire_all()
+    assert db_session.get(UserSession, stale.id) is None
+
+
+def test_identity_provider_is_an_overridable_dependency(client: TestClient, make_user) -> None:
+    """P1 §10.3 遗留 2：改成 Depends 之后身份来源才可替换（OIDC 的前置）。"""
+    from chatbi.auth.identity import get_identity_provider
+    from chatbi.main import app
+
+    user = make_user(email="ann@example.com", password="pw-12345678")
+
+    class AlwaysYes:
+        def authenticate(self, session, email, password):
+            return user
+
+    app.dependency_overrides[get_identity_provider] = AlwaysYes
+    try:
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "ann@example.com", "password": "wrong-on-purpose"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_identity_provider, None)
+
+    assert response.status_code == 200
+
+
+def test_logout_restates_the_cookie_attributes_when_deleting(
+    client: TestClient, make_user
+) -> None:
+    """P1 §10.3 遗留 6：删除指令与设置指令的属性一致，浏览器不会各自解读。"""
+    make_user(email="ann@example.com", password="pw-12345678")
+    client.post("/api/auth/login", json={"email": "ann@example.com", "password": "pw-12345678"})
+
+    header = client.post("/api/auth/logout").headers["set-cookie"].lower()
+
+    assert "httponly" in header
+    assert "samesite=lax" in header
+    assert "max-age=0" in header

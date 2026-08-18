@@ -1,9 +1,5 @@
 node_modules/
 dist/
-data/
-*.db
-*.db-shm
-*.db-wal
 *.key
 .tmp-*/
 
