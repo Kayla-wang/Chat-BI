@@ -12,6 +12,8 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from chatbi.auth.deps import current_user
+from chatbi.datasources.drivers.base import Driver
+from chatbi.datasources.registry import get_driver
 from chatbi.datasources.repository import datasource_exists, get_visible
 from chatbi.db.base import get_db
 from chatbi.db.models import Datasource, User
@@ -37,3 +39,13 @@ def require_datasource(
     if datasource_exists(db, datasource_id):
         raise ApiError(*PERMISSION_DENIED)
     raise ApiError(*DATASOURCE_NOT_FOUND)
+
+
+def driver_for(datasource: Annotated[Datasource, Depends(require_datasource)]) -> Driver:
+    """按数据源的 kind 取驱动。
+
+    做成依赖**只为可测**：/test 的端点测试要能塞进假驱动而不需要真数据库。
+    P1 遗留 2 就是反例——get_identity_provider 当初不是依赖，测试里换不掉，
+    拖到 P2a Task 1 才补上。这次一开始就做成依赖。
+    """
+    return get_driver(datasource.kind)

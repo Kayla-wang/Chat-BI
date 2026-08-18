@@ -4,6 +4,7 @@
 不出现 seal/unseal。需要新查询就回领域层加仓储函数（spec §1.3 规则 2、4）。
 """
 
+import logging
 import uuid
 from typing import Annotated
 
@@ -13,7 +14,9 @@ from sqlalchemy.orm import Session
 from chatbi.auth.deps import current_user, require_role
 from chatbi.auth.provisioning import get_user
 from chatbi.auth.schemas import ErrorResponse
-from chatbi.datasources.deps import require_datasource
+from chatbi.datasources.connection import connection_info
+from chatbi.datasources.deps import driver_for, require_datasource
+from chatbi.datasources.drivers.base import ConnectionFailed, Driver
 from chatbi.datasources.repository import (
     create_datasource,
     delete_datasource,
@@ -26,13 +29,16 @@ from chatbi.datasources.repository import (
 from chatbi.datasources.schemas import (
     DatasourceCreate,
     DatasourceResponse,
+    DatasourceTestResult,
     DatasourceUpdate,
     GrantRequest,
     GrantResponse,
 )
 from chatbi.db.base import get_db
 from chatbi.db.models import Datasource, DatasourceGrant, User
-from chatbi.errors import USER_NOT_FOUND, ApiError
+from chatbi.errors import CONNECTION_ERROR, USER_NOT_FOUND, ApiError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/datasources", tags=["datasources"])
 
@@ -41,12 +47,14 @@ _Db = Annotated[Session, Depends(get_db)]
 _CurrentUser = Annotated[User, Depends(current_user)]
 _Admin = Annotated[User, Depends(require_role("admin"))]
 _Target = Annotated[Datasource, Depends(require_datasource)]
+_Driver = Annotated[Driver, Depends(driver_for)]
 
 # responses 声明必须完整，否则 P4 生成的前端类型会缺 {code, message} 分支
 _AUTH = {401: {"model": ErrorResponse}}
 _ADMIN = _AUTH | {403: {"model": ErrorResponse}}
 _TARGET = _ADMIN | {404: {"model": ErrorResponse}}
 _CONFLICT = {409: {"model": ErrorResponse}}
+_UNAVAILABLE = {503: {"model": ErrorResponse}}
 
 
 @router.get("", response_model=list[DatasourceResponse], responses=_AUTH)
@@ -77,6 +85,45 @@ def patch(payload: DatasourceUpdate, datasource: _Target, db: _Db, _admin: _Admi
 @router.delete("/{datasource_id}", status_code=204, responses=_TARGET)
 def remove(datasource: _Target, db: _Db, _admin: _Admin) -> None:
     delete_datasource(db, datasource)
+
+
+@router.post(
+    "/{datasource_id}/test",
+    response_model=DatasourceTestResult,
+    responses=_TARGET | _UNAVAILABLE,
+)
+def test_connection(
+    datasource: _Target, driver: _Driver, db: _Db, _admin: _Admin
+) -> DatasourceTestResult:
+    """就地测连，并探测账号是否具备写权限（spec §2.4、§4.3 闸 1）。
+
+    不写 db.commit()：get_db 在请求正常结束时提交。ApiError 那条路径会被 get_db
+    回滚，所以「连不上时不动标记」是免费得到的——但那条测试仍然要有，因为这是
+    行为承诺而不是实现细节。
+    """
+    try:
+        result = driver.probe(connection_info(datasource))
+    except ConnectionFailed as exc:
+        # 地址端口进**服务端日志**，不进 HTTP 响应（spec §4.4）
+        logger.warning(
+            "数据源 %s 连接失败：%s:%s/%s",
+            datasource.id,
+            datasource.host,
+            datasource.port,
+            datasource.database,
+        )
+        raise ApiError(*CONNECTION_ERROR) from exc
+
+    # 探到可写就把「已验证只读」置 false 并告警，但**不阻止保存**（spec §4.3 闸 1）
+    datasource.is_readonly_verified = not result.can_write
+    if result.can_write:
+        logger.warning("数据源 %s 的账号具备写权限，已标记为未通过只读验证", datasource.id)
+    return DatasourceTestResult(
+        reachable=result.reachable,
+        server_version=result.server_version,
+        can_write=result.can_write,
+        is_readonly_verified=datasource.is_readonly_verified,
+    )
 
 
 # ---- grants ----

@@ -64,6 +64,19 @@ class DatasourceResponse(BaseModel):
     updated_at: datetime
 
 
+class DatasourceTestResult(BaseModel):
+    """/test 的结果。
+
+    故意不含任何凭据、也不含连接串——排障需要的是「通不通、什么版本、账号能不能写」，
+    地址端口是用户自己填的，不需要回显（spec §4.4）。
+    """
+
+    reachable: bool
+    server_version: str
+    can_write: bool
+    is_readonly_verified: bool
+
+
 class GrantRequest(BaseModel):
     user_id: uuid.UUID
     can_query: bool = True
