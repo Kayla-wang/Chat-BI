@@ -22,7 +22,7 @@ DSN_ENV = {
 }
 
 # 参与契约测的 kind。Task 3 加 "mysql"、Task 4 加 "clickhouse"。
-CONTRACT_KINDS: tuple[str, ...] = ("postgres",)
+CONTRACT_KINDS: tuple[str, ...] = ("postgres", "mysql")
 
 
 @dataclass(frozen=True)
@@ -54,6 +54,20 @@ DIALECTS: dict[str, Dialect] = {
         rows_sql="select i from generate_series(1, {n}) as i",
         create_table_sql=(
             "create table {table} (id integer not null, label text, amount numeric(12, 2))"
+        ),
+        drop_table_sql="drop table if exists {table}",
+        insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
+    ),
+    "mysql": Dialect(
+        sleep_sql="select sleep(30)",
+        # MySQL 没有 generate_series，用 8.0 的递归 CTE。默认
+        # cte_max_recursion_depth = 1000，契约测只要 50 行，够。
+        rows_sql=(
+            "with recursive s(i) as ("
+            "select 1 union all select i + 1 from s where i < {n}) select i from s"
+        ),
+        create_table_sql=(
+            "create table {table} (id int not null, label varchar(64) null, amount decimal(12, 2))"
         ),
         drop_table_sql="drop table if exists {table}",
         insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
