@@ -22,7 +22,7 @@ DSN_ENV = {
 }
 
 # 参与契约测的 kind。Task 3 加 "mysql"、Task 4 加 "clickhouse"。
-CONTRACT_KINDS: tuple[str, ...] = ("postgres", "mysql")
+CONTRACT_KINDS: tuple[str, ...] = ("postgres", "mysql", "clickhouse")
 
 
 @dataclass(frozen=True)
@@ -68,6 +68,19 @@ DIALECTS: dict[str, Dialect] = {
         ),
         create_table_sql=(
             "create table {table} (id int not null, label varchar(64) null, amount decimal(12, 2))"
+        ),
+        drop_table_sql="drop table if exists {table}",
+        insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
+    ),
+    "clickhouse": Dialect(
+        # sleep() 单次上限 3 秒，用 sleepEachRow 累加出 30 秒
+        sleep_sql="select sleepEachRow(1) from numbers(30)",
+        rows_sql="select number from numbers({n})",
+        # 必须带 ENGINE 与 ORDER BY，MergeTree 是最通用的选择
+        create_table_sql=(
+            "create table {table} ("
+            "id Int32, label Nullable(String), amount Decimal(12, 2)) "
+            "engine = MergeTree order by id"
         ),
         drop_table_sql="drop table if exists {table}",
         insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
