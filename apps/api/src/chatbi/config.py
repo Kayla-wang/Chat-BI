@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # CHATBI_COOKIE_SECURE=0 显式关闭。
     cookie_secure: bool = True
     session_ttl_hours: int = 12
+    # spec §4.3 闸 4 与闸 3 的默认值，两者都「可配」。驱动的 execute() 仍然把它们
+    # 作为显式参数接收，不自己读 get_settings()——驱动不该有隐式全局依赖，
+    # 否则契约测要靠改环境变量才能测超时。
+    query_timeout_seconds: int = 60
+    max_result_rows: int = 1000
 
     @model_validator(mode="after")
     def _resolve_secret_key(self) -> "Settings":

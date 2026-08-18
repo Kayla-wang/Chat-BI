@@ -10,6 +10,9 @@ USER_NOT_FOUND = ("USER_NOT_FOUND", "用户不存在", 404)
 EMAIL_ALREADY_EXISTS = ("EMAIL_ALREADY_EXISTS", "该邮箱已存在", 409)
 DATASOURCE_NOT_FOUND = ("DATASOURCE_NOT_FOUND", "数据源不存在", 404)
 DATASOURCE_NAME_EXISTS = ("DATASOURCE_NAME_EXISTS", "该数据源名称已存在", 409)
+# 503 而不是 502：连不上外部依赖对本服务是「暂时不可用」，
+# 语义比「上游返回了坏响应」准。文案照 spec §4.4，不回显地址端口。
+CONNECTION_ERROR = ("CONNECTION_ERROR", "无法连接到数据库，请检查地址、端口与网络", 503)
 
 
 class ApiError(Exception):

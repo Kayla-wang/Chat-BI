@@ -179,3 +179,28 @@ def admin_client(client: TestClient, make_user, login_as) -> TestClient:
     """
     login_as(make_user(role="admin"))
     return client
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:
+    """把 skip 数显式打印在末尾，并单独列出驱动契约测的 skip。
+
+    spec §5.1 的硬要求。v1 就是因为「无本地库 → skip」被当成绿灯，MySQL/PG 驱动
+    到重写前一次真库都没跑过。让这行永远出现，比指望人记得去翻 -rs 输出可靠。
+    """
+    skipped = terminalreporter.stats.get("skipped", [])
+    contract = [report for report in skipped if report.nodeid.startswith("tests/drivers/")]
+
+    terminalreporter.write_sep("=", f"skip 合计 {len(skipped)}，其中驱动契约测 {len(contract)}")
+
+    reasons: dict[str, int] = {}
+    for report in contract:
+        # longrepr 是 (path, lineno, reason) 三元组；reason 形如 "Skipped: ..."
+        reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else "未知原因"
+        reasons[reason] = reasons.get(reason, 0) + 1
+    for reason, count in sorted(reasons.items()):
+        terminalreporter.write_line(f"  {count} × {reason}")
+
+    if contract:
+        terminalreporter.write_line(
+            "  驱动契约测存在 skip：spec §5.1 要求真库全绿、skip 数为 0 才算验收通过"
+        )
