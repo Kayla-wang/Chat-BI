@@ -76,6 +76,13 @@ class Datasource(Base):
         onupdate=sa.func.now(),
     )
 
+    @property
+    def has_password(self) -> bool:
+        """给响应模型用的派生标记。返回 bool 而不是任何密钥材料，所以放在 db 层
+        不算业务逻辑——它只是那两列的一个只读视图。
+        """
+        return self.secret_ciphertext is not None
+
 
 class DatasourceGrant(Base):
     """谁能查哪个数据源。复合主键——授权是「有/无」，不是可累积的列表。
