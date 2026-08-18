@@ -4,23 +4,35 @@
 不出现 seal/unseal。需要新查询就回领域层加仓储函数（spec §1.3 规则 2、4）。
 """
 
+import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from chatbi.auth.deps import current_user, require_role
+from chatbi.auth.provisioning import get_user
 from chatbi.auth.schemas import ErrorResponse
 from chatbi.datasources.deps import require_datasource
 from chatbi.datasources.repository import (
     create_datasource,
     delete_datasource,
+    list_grants,
     list_visible,
+    revoke_grant,
+    set_grant,
     update_datasource,
 )
-from chatbi.datasources.schemas import DatasourceCreate, DatasourceResponse, DatasourceUpdate
+from chatbi.datasources.schemas import (
+    DatasourceCreate,
+    DatasourceResponse,
+    DatasourceUpdate,
+    GrantRequest,
+    GrantResponse,
+)
 from chatbi.db.base import get_db
-from chatbi.db.models import Datasource, User
+from chatbi.db.models import Datasource, DatasourceGrant, User
+from chatbi.errors import USER_NOT_FOUND, ApiError
 
 router = APIRouter(prefix="/api/datasources", tags=["datasources"])
 
@@ -65,3 +77,37 @@ def patch(payload: DatasourceUpdate, datasource: _Target, db: _Db, _admin: _Admi
 @router.delete("/{datasource_id}", status_code=204, responses=_TARGET)
 def remove(datasource: _Target, db: _Db, _admin: _Admin) -> None:
     delete_datasource(db, datasource)
+
+
+# ---- grants ----
+# 路径比 /{datasource_id} 多一段，不会和它抢匹配，声明顺序无所谓。
+# 三条都吃 _Target，所以「数据源不存在 → 404 / 无授权 → 403」自动一致。
+
+
+@router.get("/{datasource_id}/grants", response_model=list[GrantResponse], responses=_TARGET)
+def list_datasource_grants(datasource: _Target, db: _Db, _admin: _Admin) -> list[DatasourceGrant]:
+    return list_grants(db, datasource.id)
+
+
+@router.put("/{datasource_id}/grants", response_model=GrantResponse, responses=_TARGET)
+def put_grant(
+    payload: GrantRequest, datasource: _Target, db: _Db, _admin: _Admin
+) -> DatasourceGrant:
+    """PUT 而不是 POST：授权是「有/无」，重发同一份请求结果必须相同。"""
+    # 这两行「取 + 判定 + 抛」留在 router 里：user_id 来自请求体而不是路径，
+    # 做不成 FastAPI 依赖。形状与 login 里那两行一致，可接受。
+    if get_user(db, payload.user_id) is None:
+        raise ApiError(*USER_NOT_FOUND)
+    return set_grant(
+        db, datasource_id=datasource.id, user_id=payload.user_id, can_query=payload.can_query
+    )
+
+
+@router.delete("/{datasource_id}/grants/{user_id}", status_code=204, responses=_TARGET)
+def delete_grant(user_id: uuid.UUID, datasource: _Target, db: _Db, _admin: _Admin) -> None:
+    """幂等：授权本来就不存在也返回 204。
+
+    这里不校验 user_id 是否存在——撤销一个不存在用户的授权，结果和撤销一个
+    不存在的授权没有区别，都是「现在没有」。
+    """
+    revoke_grant(db, datasource_id=datasource.id, user_id=user_id)

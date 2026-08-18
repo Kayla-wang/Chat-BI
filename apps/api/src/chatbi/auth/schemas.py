@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from chatbi.auth.provisioning import MIN_PASSWORD_LENGTH
 
 
 class LoginRequest(BaseModel):
@@ -20,6 +23,19 @@ class UserResponse(BaseModel):
     role: str
     is_active: bool
     created_at: datetime
+
+
+class UserCreateRequest(BaseModel):
+    """admin 开号的请求体。
+
+    密码长度与角色白名单的真相源在 provisioning（CLI 走同一个函数），这里的
+    约束只是 HTTP 层的早退：让不合规的请求拿到 422 而不是 500。
+    """
+
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH, max_length=1024)
+    role: Literal["admin", "analyst", "viewer"]
 
 
 class ErrorResponse(BaseModel):
