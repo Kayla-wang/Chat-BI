@@ -1943,6 +1943,28 @@ chatbi.errors.CONNECTION_ERROR = ("CONNECTION_ERROR", "无法连接到数据库�
 
 ---
 
+## 实施期的偏差（执行中回填）
+
+四个任务全部完成：`7ca53e6`（Task 1，145 passed）· `bb705cc`（Task 2，158 passed，**13 条契约测全部对真 Postgres 跑通**）· `ccc4763`（Task 3，158 passed / 13 skipped）· `7878946`（Task 4，**173 passed / 26 skipped**）。每个任务的反向验证都两个方向跑过，实测数与计划预期逐段吻合。
+
+**唯一的实现缺陷：`SET` 不接受绑定参数。** 计划 Task 2 Step 4 写的是 `cur.execute("set statement_timeout = %s", ...)`，Postgres 直接报 `syntax error at or near "$1"`——`SET` 是工具语句。改成 `select set_config('statement_timeout', %s, false)`（普通函数，可绑参，不必把数值拼进 SQL）。已回填进计划的代码块与 Step 6 反向验证第 3 条。
+
+**这个缺陷的表现值得记住**：它让**每一个** `execute()` 调用失败，于是 5 个用 `seeded_table` 夹具的测试报 ERROR、另 5 个报 FAIL，只有 3 条不碰 `execute()` 的通过。第一眼极像「夹具写错了」——实际根因在被夹具调用的那一行。**契约测的夹具本身依赖被测代码时，夹具报错要先怀疑被测代码。**
+
+**实装版本比计划的下限高不少**（`>=` 约束都满足，但 API 细节可能与计划假设不同，门禁时留意）：
+
+| 包 | 计划下限 | 实装 |
+|---|---|---|
+| `pymysql` | >=1.1 | 1.2.0 |
+| `clickhouse-connect` | >=0.8 | **1.7.1** |
+| `cryptography` | >=44 | 50.0.0 |
+
+`clickhouse-connect` 跨了一个大版本，`get_client` / `driver.exceptions` / `result.column_types` 三处 import 与属性访问都已验证可用（`get_driver('clickhouse')` 在反向验证第 1 条里真实 import 过），但 `column_types` 的元素类型、`code` 属性是否存在，仍要等真库确认。
+
+**两条无真库时无法验证、已按计划推迟的**：MySQL 的 errno 分支 / `max_execution_time` / `KILL QUERY` 三条；ClickHouse 的 `_CAN_WRITE_SQL` / 错误码 / `cancel` 三条。都写在下游那份的 Task 7 Step 5、Step 6 里。
+
+---
+
 ## 自查记录
 
 **spec 覆盖核对**（只核本份承担的）
