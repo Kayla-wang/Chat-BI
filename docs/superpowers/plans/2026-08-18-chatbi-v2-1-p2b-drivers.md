@@ -1163,7 +1163,14 @@ class PostgresDriver:
     ) -> QueryResult:
         with self._connect(info) as conn, conn.cursor() as cur:
             # 库侧超时。客户端等够了就断开不算超时——查询会继续在对面跑。
-            cur.execute("set statement_timeout = %s", (timeout_seconds * 1000,))
+            #
+            # 用 set_config() 而不是 `set statement_timeout = %s`：SET 是**工具语句**，
+            # 不接受绑定参数（会报 `syntax error at or near "$1"`）。set_config 是
+            # 普通函数，可以绑参，所以不必把数值拼进 SQL 字符串。第三参 false = 会话级。
+            cur.execute(
+                "select set_config('statement_timeout', %s, false)",
+                (str(timeout_seconds * 1000),),
+            )
             if on_start is not None:
                 cur.execute("select pg_backend_pid()")
                 on_start(QueryHandle(token=str(cur.fetchone()[0])))
@@ -1225,7 +1232,9 @@ uv run pytest tests/drivers -v && uv run pytest -q && uv run ruff check src test
 
 1. `_CAN_WRITE_SQL` 整个换成 `select false` → `test_probe_detects_a_writable_account` 必须 FAIL。这条证明探测**真的在探**而不是恒返回一个值。
 2. `fetchmany(max_rows + 1)` 改成 `fetchmany(max_rows)` → `test_execute_truncates_at_max_rows` 必须 FAIL（`truncated` 变成 False），而 `..._fits_exactly` 仍绿。「多取一行」这个技巧的全部价值在这一对上。
-3. 删掉 `set statement_timeout` 那两行 → `test_execute_raises_query_timeout` 必须 FAIL。**这条要等约 30s**（`pg_sleep(30)` 会跑完然后成功返回），别以为是卡死。
+3. 删掉那句 `set_config('statement_timeout', ...)` → `test_execute_raises_query_timeout` 必须 FAIL。**这条要等约 30s**（`pg_sleep(30)` 会跑完然后成功返回），别以为是卡死。
+
+   顺带一条**实施期踩到的坑**（已写进 Step 4 的注释）：初版写的是 `set statement_timeout = %s`，Postgres 直接报 `syntax error at or near "$1"`——`SET` 是工具语句不接受绑定参数。它让**每一个** `execute()` 调用都失败，表现是 5 个用 `seeded_table` 夹具的测试 ERROR + 5 个 FAIL，很容易误判成「夹具写错了」。MySQL 与 ClickHouse 的 `set session ...` 是普通语句，不受此限。
 4. `cancel()` 的方法体换成 `pass` → `test_cancel_stops_a_running_query` 必须 FAIL（`worker.is_alive()` 仍为真）。spec §2.3 直接点名了这个错误：只关流不取消后端查询，私有化部署里一条跑飞的查询能拖垮用户的生产库。
 5. 删掉 `execute` 里 `on_start` 那三行 → 同一条测试必须 FAIL 在 `started.wait(timeout=10)` 上，且 `test_cancel_is_idempotent_after_the_query_finished` 会以 `IndexError` 报错。取消能力只有这一个入口，堵上它就没有别的路。
 6. `_column_from_description` 与 `reflect` 里的 `is_numeric` 都写死成 `False` → `test_reflect_describes_the_seeded_columns` 必须 FAIL。
