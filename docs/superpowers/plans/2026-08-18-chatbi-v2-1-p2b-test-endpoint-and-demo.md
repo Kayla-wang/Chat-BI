@@ -1156,6 +1156,34 @@ EOF
 
 ---
 
+## 实施期的偏差（执行中回填）
+
+### Task 5 已完成（commit `c4f494c`，187 passed / 26 skipped）
+
+计划照写即通，六条反向验证全部成立。**第 6 条的结果值得单独记**：把 `connection.py` 的 `password=read_password(datasource)` 改成 `None` 后，组装测试红 1 条，而**端点测试 9 条全绿**——假驱动不看密码。这证明两个测试文件都必须存在，删掉任一个都会留下一个无人看守的缺口。
+
+### Task 6 被拆成两半（前半 commit `06b197b`，190 passed / 26 skipped）
+
+**Step 1 的 `CREATEROLE` 拿不到**：本机 `postgres` 与 `chatbi` 两个账号都要密码（`fe_sendauth: no password supplied`），没有可用的超级用户通道，`alter role chatbi createrole;` 只能由操作者执行。
+
+因此 Task 6 按「是否依赖那个权限」切成两半：
+
+| 部分 | 内容 | 状态 |
+|---|---|---|
+| 前半 | migration 0003（schema / 三张表 / 240 行数据 / 全列中文注释）+ 三条测试 + `test_migrations.py` 的 demo 表双向断言 | **已完成**，190 passed |
+| 后半 | `seed-demo` CLI、只读角色与授权、红线测试 `test_the_demo_role_cannot_read_application_tables`、幂等与加密往返四条测试 | **阻塞**，等 `CREATEROLE` |
+
+这样切是因为 migration 与角色互不依赖，前半独立可验收；而后半的**全部**价值都在那条红线测试上——没有角色就只能靠 `--reuse-app-account`，而那恰恰是这条测试要否证的形态。
+
+**一处对计划的偏离**：订单时间步长从 `7 hours` 改成 `12 hours`。计划自己预告过 7 小时只跨 70 天、恰好 3 个月份、卡在 `months >= 3` 的边界上没有余量，并给了改步长这条办法。这里直接用了它而不是等某天失败——12 小时跨约 120 天、覆盖 4 个月份。
+
+**恢复后半的做法**（权限到位后）：
+1. 超级用户执行 `alter role chatbi createrole;`，用 Step 1 那段脚本确认打印 `createrole: True`。
+2. 按 Step 5 写 `seed-demo`，按 Step 2 后半把五条测试补进 `tests/test_demo_sales.py`（该文件顶部已写明这批测试为何缺席）。
+3. 跑 Step 7（预期 `195 passed`）与 Step 8 的五条反向验证。
+
+---
+
 ## 交接清单（P2c 与 P3 要消费的签名）
 
 ```python
