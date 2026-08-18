@@ -1,12 +1,15 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from chatbi.db.base import Base
 
 ROLES: tuple[str, str, str] = ("admin", "analyst", "viewer")
+DATASOURCE_KINDS: tuple[str, str, str] = ("postgres", "mysql", "clickhouse")
 
 
 class User(Base):
@@ -36,3 +39,57 @@ class UserSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class Datasource(Base):
+    """一个外部数据库的连接定义。密码以 AES-GCM 密文存两列，见 datasources/crypto.py。
+
+    表级 CHECK（kind 取值、secret 两列成对）只写在 migration 0002 里，与 P1 的
+    users.role 一致：建表永远走 Alembic，模型的 __table_args__ 根本不会被执行，
+    写两份只会得到两份不同步的约束。
+    """
+
+    __tablename__ = "datasources"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid(), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(sa.String(200), nullable=False, unique=True)
+    kind: Mapped[str] = mapped_column(sa.String(20), nullable=False)
+    host: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    port: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    database: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    username: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    # 两列同时为空 = 未存密码，同时非空 = 已存。没有第三种状态（CHECK 在 migration 里）
+    secret_ciphertext: Mapped[bytes | None] = mapped_column(sa.LargeBinary(), nullable=True)
+    secret_nonce: Mapped[bytes | None] = mapped_column(sa.LargeBinary(), nullable=True)
+    options: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, default=dict)
+    is_readonly_verified: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False, default=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
+
+
+class DatasourceGrant(Base):
+    """谁能查哪个数据源。复合主键——授权是「有/无」，不是可累积的列表。
+
+    故意不定义 relationship：`db` 是叶子模块（spec §1.3 规则 4），
+    联表由 repository 显式写 select，不让 ORM 在属性访问时偷偷发查询。
+    """
+
+    __tablename__ = "datasource_grants"
+
+    datasource_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    can_query: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False, default=True)

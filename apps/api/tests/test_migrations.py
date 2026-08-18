@@ -19,12 +19,15 @@ def _table_names() -> set[str]:
         engine.dispose()
 
 
+TABLES = {"users", "sessions", "datasources", "datasource_grants"}
+
+
 def test_migrations_roundtrip(_migrated: None) -> None:
     """从 head 出发 down 到底再 up 回 head，结束时状态与开始时一致。"""
-    assert {"users", "sessions"} <= _table_names()
+    assert TABLES <= _table_names()
 
     _alembic("downgrade", "base")
-    assert not {"users", "sessions"} & _table_names()
+    assert not TABLES & _table_names()
 
     _alembic("upgrade", "head")
-    assert {"users", "sessions"} <= _table_names()
+    assert TABLES <= _table_names()

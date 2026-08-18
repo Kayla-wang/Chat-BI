@@ -101,3 +101,52 @@ def make_user(db_session: Session):
         return user
 
     return _make
+
+
+@pytest.fixture
+def make_datasource(db_session: Session, make_user):
+    """建一个测试数据源。密码用 Task 2 的 seal 就地加密。
+
+    id 先生成再加密：AAD 绑定数据源 id，所以顺序不能反。
+    created_by 默认新建一个 admin，与调用方自己的用户区分开——否则
+    「删用户」类测试会撞上 created_by 的 RESTRICT 而不是测到想测的东西。
+    """
+    import uuid
+
+    from chatbi.datasources.crypto import aad_for_datasource, seal
+    from chatbi.db.models import Datasource
+
+    def _make(
+        *,
+        name: str | None = None,
+        kind: str = "postgres",
+        host: str = "db.internal",
+        port: int = 5432,
+        database: str = "analytics",
+        username: str = "ro_user",
+        password: str | None = "ds-pw-123456",
+        options: dict | None = None,
+        is_readonly_verified: bool = False,
+        created_by: uuid.UUID | None = None,
+    ) -> Datasource:
+        datasource_id = uuid.uuid4()
+        sealed = seal(password, aad=aad_for_datasource(datasource_id)) if password else None
+        datasource = Datasource(
+            id=datasource_id,
+            name=name or f"ds-{datasource_id.hex[:8]}",
+            kind=kind,
+            host=host,
+            port=port,
+            database=database,
+            username=username,
+            secret_ciphertext=sealed.ciphertext if sealed else None,
+            secret_nonce=sealed.nonce if sealed else None,
+            options=options if options is not None else {},
+            is_readonly_verified=is_readonly_verified,
+            created_by=created_by or make_user(role="admin").id,
+        )
+        db_session.add(datasource)
+        db_session.flush()
+        return datasource
+
+    return _make
