@@ -150,3 +150,32 @@ def make_datasource(db_session: Session, make_user):
         return datasource
 
     return _make
+
+
+@pytest.fixture
+def login_as(client: TestClient, db_session: Session):
+    """把某个用户的会话 cookie 塞进 client。返回传入的对象，方便链式写。
+
+    走真会话表而不是伪造 cookie——current_user 会去 sessions 表查，
+    伪造的 cookie 一律 401。
+    """
+    from chatbi.auth.deps import SESSION_COOKIE
+    from chatbi.auth.sessions import create_session
+
+    def _login(user):
+        record = create_session(db_session, user)
+        client.cookies.set(SESSION_COOKIE, str(record.id))
+        return user
+
+    return _login
+
+
+@pytest.fixture
+def admin_client(client: TestClient, make_user, login_as) -> TestClient:
+    """已登录为 admin 的 client。数据源与用户的写操作都要它。
+
+    需要拿到那个 admin 对象本身时，别用这个夹具，直接
+    `login_as(make_user(role="admin"))`——返回值就是它。
+    """
+    login_as(make_user(role="admin"))
+    return client
