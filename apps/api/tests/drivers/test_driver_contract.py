@@ -100,6 +100,25 @@ def test_reflect_describes_the_seeded_columns(driver_target, seeded_table) -> No
     assert columns["id"].data_type  # 原始类型名原样保留，P2c 的注释 UI 要显示
 
 
+def test_reflect_carries_comments(driver_target, commented_table) -> None:
+    """注释是进 LLM prompt 的唯一业务语义来源（spec §4.5），也是 F-201 的全部内容。
+
+    这条测试的存在本身是一次教训：Postgres 的 reflect() 对每一列都返回 None
+    （它查的 information_schema.columns 根本没有注释列），而 13 条契约测里没有任何
+    一条断言注释，所以这个缺陷活到了 P2c。
+    """
+    driver, info, _ = driver_target
+
+    table = next(t for t in driver.reflect(info).tables if t.name == commented_table)
+    columns = {column.name: column for column in table.columns}
+
+    assert columns["label"].comment == "标签注释"
+    assert table.comment == "契约测表"
+    # 没写注释的列必须是 None 而不是 ""：None 表示「库里没写」，空字符串会在 prompt
+    # 里出现一个空注释行，也会让前端分不清「没写」和「写了个空的」
+    assert columns["id"].comment is None
+
+
 def test_execute_returns_columns_and_rows(driver_target, seeded_table) -> None:
     driver, info, _ = driver_target
 

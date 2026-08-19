@@ -115,9 +115,17 @@ class ClickHouseDriver:
                 "where database = currentDatabase() order by table, position"
             )
             rows = result.result_rows
+            # 表注释不在 system.columns 里，只能另查一次。两条查询之间理论上可以有
+            # 并发建表，所以下面用 .get() 而不是 []——拿不到表注释不该让整个
+            # reflect() 抛 KeyError
+            table_rows = client.query(
+                "select name, comment from system.tables where database = currentDatabase()"
+            ).result_rows
         finally:
             client.close()
 
+        # ClickHouse 对「没有注释」返回空字符串而不是 NULL
+        table_comments = {name: comment or None for name, comment in table_rows}
         grouped: dict[str, list[ColumnSchema]] = {}
         for table_name, column_name, type_name, comment in rows:
             _, nullable = _unwrap(type_name)
@@ -131,7 +139,12 @@ class ClickHouseDriver:
                 )
             )
         tables = tuple(
-            TableSchema(name=table, schema_name=info.database, columns=tuple(columns))
+            TableSchema(
+                name=table,
+                schema_name=info.database,
+                columns=tuple(columns),
+                comment=table_comments.get(table),
+            )
             for table, columns in sorted(grouped.items())
         )
         return SchemaSnapshot(tables=tables)

@@ -50,14 +50,30 @@ _NUMERIC_TYPES = frozenset(
     }
 )
 
+# 注释在 pg_description 里，information_schema.columns **没有注释列**——这是本文件
+# 到 P2c 才被发现的缺陷的根因。改回 information_schema 就会把注释丢掉。
+#
+# 类型名用 atttypid::regtype::text，**不要**用 format_type(atttypid, atttypmod)：后者
+# 对 numeric(12,2) 返回带精度的 'numeric(12,2)'，它不在 _NUMERIC_TYPES 里，会把
+# is_numeric 静默变成 False（前端据此选图，坏掉的方式是「图表选项里少了一列」，
+# 不报错）。已实测 regtype 与原先 information_schema.data_type 在 integer / text /
+# numeric / timestamptz 上逐一相同，所以这次换 SQL 不改变 data_type 的既有语义。
+#
+# attnum > 0 排除系统列（ctid 等），not attisdropped 排除已 DROP 但物理仍在的列。
+# 少任何一个，快照里都会出现库里看不到的列，而那些列会进 prompt。
 _REFLECT_SQL = """
-select c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable
-from information_schema.columns c
-join information_schema.tables t
-  on t.table_schema = c.table_schema and t.table_name = c.table_name
-where c.table_schema not in ('pg_catalog', 'information_schema')
-  and t.table_type = 'BASE TABLE'
-order by c.table_schema, c.table_name, c.ordinal_position
+select n.nspname, c.relname, a.attname,
+       a.atttypid::regtype::text as data_type,
+       not a.attnotnull as is_nullable,
+       col_description(c.oid, a.attnum) as column_comment,
+       obj_description(c.oid, 'pg_class') as table_comment
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+join pg_attribute a on a.attrelid = c.oid
+where c.relkind = 'r'
+  and n.nspname not in ('pg_catalog', 'information_schema')
+  and a.attnum > 0 and not a.attisdropped
+order by n.nspname, c.relname, a.attnum
 """
 
 # 只读地问权限，而不是试着建表。CREATE 与「任意现存表可 INSERT」都算可写：
@@ -102,19 +118,41 @@ class PostgresDriver:
 
     def reflect(self, info: ConnectionInfo) -> SchemaSnapshot:
         grouped: dict[tuple[str, str], list[ColumnSchema]] = {}
+        table_comments: dict[tuple[str, str], str | None] = {}
         with self._connect(info) as conn, conn.cursor() as cur:
             cur.execute(_REFLECT_SQL)
-            for schema_name, table_name, column_name, data_type, is_nullable in cur.fetchall():
-                grouped.setdefault((schema_name, table_name), []).append(
+            for (
+                schema_name,
+                table_name,
+                column_name,
+                data_type,
+                is_nullable,
+                column_comment,
+                table_comment,
+            ) in cur.fetchall():
+                key = (schema_name, table_name)
+                # 每行都带同一张表的表注释，重复赋值无害；这样只需要一次查询
+                table_comments[key] = table_comment
+                grouped.setdefault(key, []).append(
                     ColumnSchema(
                         name=column_name,
                         data_type=data_type,
-                        is_nullable=is_nullable == "YES",
+                        # SQL 里已经 `not a.attnotnull`，这里直接是 bool——不再是
+                        # information_schema 那套 `== "YES"` 的字符串比较
+                        is_nullable=is_nullable,
                         is_numeric=data_type in _NUMERIC_TYPES,
+                        # col_description 对没有注释的列返回 NULL → None，正是要的
+                        # 语义。不加 `or None`：那会掩盖「注释是空字符串」这种情况
+                        comment=column_comment,
                     )
                 )
         tables = tuple(
-            TableSchema(name=table, schema_name=schema, columns=tuple(columns))
+            TableSchema(
+                name=table,
+                schema_name=schema,
+                columns=tuple(columns),
+                comment=table_comments[(schema, table)],
+            )
             for (schema, table), columns in sorted(grouped.items())
         )
         return SchemaSnapshot(tables=tables)

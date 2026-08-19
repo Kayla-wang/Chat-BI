@@ -47,6 +47,18 @@ class Dialect:
     insert_row_sql: str
     """插一行，带 {table}。"""
 
+    comment_column_sql: str
+    """给 {table} 的 label 列加注释「标签注释」。带 {table}。
+
+    MySQL 的 `modify column` 语义是**重写整个列定义**，所以它必须与
+    create_table_sql 里 label 的类型逐字一致（varchar(64) null）。两处不同步会
+    静默改掉列类型，让 test_reflect_describes_the_seeded_columns 转红——而那条
+    测试的报错完全不会指向这里。改任何一处都要同时看另一处。
+    """
+
+    comment_table_sql: str
+    """给 {table} 加表注释「契约测表」。带 {table}。"""
+
 
 DIALECTS: dict[str, Dialect] = {
     "postgres": Dialect(
@@ -57,6 +69,8 @@ DIALECTS: dict[str, Dialect] = {
         ),
         drop_table_sql="drop table if exists {table}",
         insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
+        comment_column_sql="comment on column {table}.label is '标签注释'",
+        comment_table_sql="comment on table {table} is '契约测表'",
     ),
     "mysql": Dialect(
         sleep_sql="select sleep(30)",
@@ -71,6 +85,11 @@ DIALECTS: dict[str, Dialect] = {
         ),
         drop_table_sql="drop table if exists {table}",
         insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
+        # 类型必须与上面 create_table_sql 的 label 一致——modify column 会重写整个列定义
+        comment_column_sql=(
+            "alter table {table} modify column label varchar(64) null comment '标签注释'"
+        ),
+        comment_table_sql="alter table {table} comment = '契约测表'",
     ),
     "clickhouse": Dialect(
         # sleep() 单次上限 3 秒，用 sleepEachRow 累加出 30 秒
@@ -84,6 +103,8 @@ DIALECTS: dict[str, Dialect] = {
         ),
         drop_table_sql="drop table if exists {table}",
         insert_row_sql="insert into {table} (id, label, amount) values (1, '甲', 12.34)",
+        comment_column_sql="alter table {table} comment column label '标签注释'",
+        comment_table_sql="alter table {table} modify comment '契约测表'",
     ),
 }
 
@@ -148,3 +169,17 @@ def seeded_table(driver_target) -> str:
         driver.execute(
             info, dialect.drop_table_sql.format(table=table), timeout_seconds=30, max_rows=1
         )
+
+
+@pytest.fixture
+def commented_table(driver_target, seeded_table) -> str:
+    """在 seeded_table 上补一条列注释与一条表注释，返回表名。
+
+    单独一个夹具而不是把注释塞进 seeded_table：只有一条测试需要注释，而 MySQL
+    那条语句要重写整个列定义（见 Dialect.comment_column_sql 的注释）。让 12 条用
+    seeded_table 的测试都跑它，等于给它们引入一份与自己无关的风险。
+    """
+    driver, info, dialect = driver_target
+    for template in (dialect.comment_column_sql, dialect.comment_table_sql):
+        driver.execute(info, template.format(table=seeded_table), timeout_seconds=30, max_rows=1)
+    return seeded_table

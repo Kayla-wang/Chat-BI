@@ -52,7 +52,8 @@ _NUMERIC_TYPES = frozenset(
 
 # 只看当前库。information_schema 里别的库的表不属于这个数据源的可见范围。
 _REFLECT_SQL = """
-select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_comment
+select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_comment,
+       t.table_comment
 from information_schema.columns c
 join information_schema.tables t
   on t.table_schema = c.table_schema and t.table_name = c.table_name
@@ -111,9 +112,20 @@ class MySQLDriver:
 
     def reflect(self, info: ConnectionInfo) -> SchemaSnapshot:
         grouped: dict[str, list[ColumnSchema]] = {}
+        table_comments: dict[str, str | None] = {}
         with self._connect(info) as conn, conn.cursor() as cur:
             cur.execute(_REFLECT_SQL)
-            for table_name, column_name, data_type, is_nullable, comment in cur.fetchall():
+            for (
+                table_name,
+                column_name,
+                data_type,
+                is_nullable,
+                comment,
+                table_comment,
+            ) in cur.fetchall():
+                # MySQL 对「没有注释」返回空字符串而不是 NULL，列和表都是。不 or None
+                # 的话每张表都会得到一个 "" 注释，进 prompt 就是一行空注释
+                table_comments[table_name] = table_comment or None
                 grouped.setdefault(table_name, []).append(
                     ColumnSchema(
                         name=column_name,
@@ -124,7 +136,12 @@ class MySQLDriver:
                     )
                 )
         tables = tuple(
-            TableSchema(name=table, schema_name=info.database, columns=tuple(columns))
+            TableSchema(
+                name=table,
+                schema_name=info.database,
+                columns=tuple(columns),
+                comment=table_comments[table],
+            )
             for table, columns in sorted(grouped.items())
         )
         return SchemaSnapshot(tables=tables)
