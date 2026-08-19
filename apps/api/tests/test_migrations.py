@@ -19,7 +19,14 @@ def _table_names(schema: str | None = None) -> set[str]:
         engine.dispose()
 
 
-TABLES = {"users", "sessions", "datasources", "datasource_grants"}
+TABLES = {
+    "users",
+    "sessions",
+    "datasources",
+    "datasource_grants",
+    "schema_cache",
+    "column_notes",
+}
 # demo 表不在默认 schema 里，get_table_names() 看不到，要单独断言
 DEMO_TABLES = {"customers", "orders", "products"}
 

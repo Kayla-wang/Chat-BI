@@ -100,3 +100,48 @@ class DatasourceGrant(Base):
         sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
     )
     can_query: Mapped[bool] = mapped_column(sa.Boolean(), nullable=False, default=True)
+
+
+class SchemaCache(Base):
+    """一个数据源的表结构快照。payload 是 SchemaSnapshot 的 JSON。
+
+    表级约束只写在 migration 里，与 Datasource 一致：建表永远走 Alembic，模型的
+    __table_args__ 根本不会被执行，写两份只会得到两份不同步的约束。
+    """
+
+    __tablename__ = "schema_cache"
+
+    datasource_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("datasources.id", ondelete="CASCADE"), primary_key=True
+    )
+    fetched_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+
+
+class ColumnNote(Base):
+    """人工补的列注释。与 schema_cache 分开存，因为 refresh 整行覆盖 payload。
+
+    唯一键是四列（含 schema_name），比 spec §2.5 多一列——理由见 migration 0004
+    里的注释。故意不定义 relationship：db 是叶子模块（spec §1.3 规则 4）。这也意味着
+    SQLAlchemy 不知道 DB 级的 ON DELETE CASCADE，测试里别用 session.get() 去验删除。
+    """
+
+    __tablename__ = "column_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid(), primary_key=True, default=uuid.uuid4)
+    datasource_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("datasources.id", ondelete="CASCADE"), nullable=False
+    )
+    schema_name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    table_name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    column_name: Mapped[str] = mapped_column(sa.String(200), nullable=False)
+    note: Mapped[str] = mapped_column(sa.Text(), nullable=False)
+    updated_by: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+    )
