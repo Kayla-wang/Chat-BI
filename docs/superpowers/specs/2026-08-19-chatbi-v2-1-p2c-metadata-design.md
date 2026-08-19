@@ -306,10 +306,12 @@ COLUMN_ID_AMBIGUOUS = ("COLUMN_ID_AMBIGUOUS", "该列标识不唯一，无法定
 | 任务后 | passed | skipped |
 |---|---|---|
 | 1 | 191 | 28 |
-| 2 | 194 | 28 |
-| 3 | 200 | 28 |
-| 4 | 206 | 28 |
-| 5 | 217 | 28 |
+| 2 | 193 | 28 |
+| 3 | 202 | 28 |
+| 4 | 211 | 28 |
+| 5 | 226 | 28 |
+
+（这张表在写实施计划时按逐条列出的测试修正过一次。初稿估的是 194 / 200 / 206 / 217，写计划时数出实际条数为 +1 / +2 / +9 / +9 / +15。实施计划里的数字是准的，两处不一致时以计划为准。）
 
 skip 从 26 变 28 是 §1.3 的新契约测在 MySQL/ClickHouse 上各 skip 一条，**是预期的**，不是回退。实测与上表不符就停下核对，别改断言凑数。
 
@@ -363,12 +365,22 @@ known_identifiers(db, datasource_id: uuid.UUID) -> frozenset[str]
 column_id(schema_name: str, table_name: str, column_name: str) -> str
 resolve_column_id(snapshot: SchemaSnapshot, col_id: str) -> tuple[str, str, str]
 #   命中 0 抛 ApiError(*COLUMN_NOT_FOUND)、≥2 抛 ApiError(*COLUMN_ID_AMBIGUOUS)
-merge_schema(snapshot, notes, *, fetched_at) -> SchemaResponse
+merge_schema(snapshot, notes: Mapping[tuple[str, str, str], str],
+             *, fetched_at) -> SchemaResponse
+#   notes 收映射而不是 ORM 对象列表，这样本模块不必 import sqlalchemy。
+#   转换那一行留在 router 里（_notes_map），只此一处
+column_view(snapshot, *, schema_name, table_name, column_name,
+            note: str | None) -> ColumnSchemaResponse
+#   PATCH 的响应用它——那一列的新形态
 
 # 端点
 GET   /api/datasources/{id}/schema[?refresh=1] -> 200 | 401 | 403 | 404 | 503
 PATCH /api/datasources/{id}/schema/columns/{col_id} -> 200 | 401 | 403 | 404 | 409
+#   PATCH 的响应体是 ColumnSchemaResponse，不是整个 schema：一张 200 列的表
+#   整份回传只为确认一条注释写成功太重，而空体会逼前端再发一次 GET
 ```
+
+（`column_view` 与 PATCH 的响应模型是写实施计划时补的——本设计初稿只定了状态码，没定响应体。）
 
 **P3 prompt 构建**
 - 用 `merge_schema()` 的输出，别自己读 `schema_cache`。每列有 `comment`（库原生）与 `note`（人工）两个字段，两条都放进 prompt 是预期用法。
