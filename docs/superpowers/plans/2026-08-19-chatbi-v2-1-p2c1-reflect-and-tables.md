@@ -743,7 +743,63 @@ payload 里绝不存人工注释——refresh 整行覆盖它。两张表的 dat
 
 ## 实施期的偏差（执行中回填）
 
-（开工前为空。每个任务做完就在这里记：实测计数与预期不符的地方、对计划的偏离及理由、反向验证里出现的意外结果。P1/P2a/P2b 三次的经验是**攒着必漏**——发现即回填，别等到最后。）
+### 两个任务都已完成（2026-08-19）
+
+| 任务 | commit | 实测 | 与预期 |
+|---|---|---|---|
+| Task 1 | `fa54276` | 191 passed / 28 skipped | 吻合 |
+| Task 2 | `de39618` | 193 passed / 28 skipped | 吻合 |
+
+计划照写即通，七条反向验证全部成立。下面四条是实施中发现的、计划里写错或没写到的东西。
+
+### 偏差 1：计划里那条 `session.get(...) is None` 是错的
+
+Task 2 Step 1 写的是：
+
+```python
+assert db_session.get(SchemaCache, datasource.id) is None
+```
+
+**这条永远通不过**，而且失败方式很误导。两张表都没定义 relationship（`db` 是叶子模块），所以 SQLAlchemy 不知道 DB 级的 `ON DELETE CASCADE`；`session.delete(datasource)` + `flush()` 之后，库里的 `schema_cache` 行确实被 CASCADE 删了，但 ORM 的 identity map 里那个 `SchemaCache` 对象还在，`session.get()` 会**直接把它返回而根本不发 SQL**。
+
+改成了一个 `_count()` 辅助函数（`select(func.count())`），它总是打库。理由写进了那个函数的文档字符串。
+
+**这个形状值得记住**：验证 DB 级 CASCADE / 触发器 / server_default 时，任何走 identity map 的读取（`session.get`、已加载对象的属性）都不可信。要么 `expire_all()`，要么用聚合查询。
+
+### 偏差 2：反向验证 2 会把测试库的迁移状态弄坏
+
+「唯一索引整个删掉」这条要同时删 `upgrade()` 的 `create_index` 与 `downgrade()` 的 `drop_index`（否则那一轮的 `downgrade base` 就先炸了）。但恢复 migration 之后，库里已经是「无索引」版本建出来的——下一次 `_migrated` 夹具跑 `downgrade base` 时 `drop_index` 找不到索引，**两条测试直接 ERROR**。
+
+修法是手工补上索引让迁移状态自洽：
+
+```bash
+create unique index if not exists uq_column_notes_column
+  on column_notes (datasource_id, schema_name, table_name, column_name);
+```
+
+**p2c2 或将来做同类反向验证时要预料到这一点**：凡是改 `upgrade()` 与 `downgrade()` 不对称的地方，反向验证结束后库和 migration 会不一致，恢复代码不等于恢复库。要么反向验证前先 `alembic downgrade base`，要么事后手工补。
+
+### 偏差 3：`ruff format --check` 在 HEAD 上就已经不干净
+
+Global Constraints 写着「ruff 必须干净」，包含 `uv run ruff format --check .`。实测：**HEAD（`fa54276` 之前）上就有 16 个文件 would be reformatted**，ruff 版本 0.16.2、`line-length = 100` 配置也确实被读到了。报的位置全在本份没碰过的既有代码上（`postgres.py` 的 `_column_from_description`、`clickhouse.py` 的 `execute`/`cancel`、`conftest.py` 的 `seeded_table` 等），格式化器想把那些拆行合并成 ≤100 字符的单行。
+
+**没有顺手 `ruff format` 全仓**——那是与本任务无关的 16 文件改动，会把 Task 1、2 的 diff 淹掉。本份的处置是：`ruff check`（lint）保持干净并作为门禁，`ruff format --check` 的既有失败**如实记在这里**，不假装通过。
+
+这一条要么单独一个提交做掉（`ruff format .` 全仓 + 一条说明），要么把它从 Global Constraints 里降级成「`ruff check` 干净即可」。**这是个待决定项，留给用户**，不由实施者顺手改掉。
+
+### 偏差 4：`demo_sales` 的表注释是「客户」而不是「客户表」
+
+Task 1 做完后真跑了一次 `reflect()` 对 `chatbi_test` 的 `demo_sales.customers`，确认注释真的出来了：
+
+```
+表 demo_sales.customers  表注释='客户'
+  id       integer  numeric=True   注释='客户 ID'
+  name     text     numeric=False  注释='客户名称'
+  city     text     numeric=False  注释='所在城市'
+  segment  text     numeric=False  注释='客户分层：企业 / 中小 / 个人'
+```
+
+`data_type` 与 `is_numeric` 也都正确（`integer` → True、`text` → False），这实证了 §1.2 选 `::regtype::text` 而不是 `format_type()` 的判断。**p2c2 写测试时别照抄「客户表」这个字面量**，migration 0003 写的是「客户」。
 
 ---
 
