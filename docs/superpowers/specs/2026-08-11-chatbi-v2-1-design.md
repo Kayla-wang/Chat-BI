@@ -215,7 +215,9 @@ run_result_previews(run_id uuid pk fk, columns jsonb, rows jsonb, truncated bool
 -- 只存前 100 行摘要，不存全量快照；回放时重跑取全量
 ```
 
-`demo_sales` schema 与应用表同库不同 schema，由一个独立 migration 建表灌数，并自动注册成一个名为「示例销售库」的数据源。
+`demo_sales` schema 与应用表同库不同 schema，由一个独立 migration 建表灌数；注册成一个名为「示例销售库」的数据源由 CLI `seed-demo` 完成，**不由 migration 自动做**。
+
+理由：注册数据源必须 seal 密码，而 seal 需要主密钥。让 `alembic upgrade` 依赖 `CHATBI_SECRET_KEY` 会把「跑迁移」和「持有主密钥」永久绑死——CI 只想验 schema 时也得先配好密钥。「开箱即跑」仍然成立，只是多一条命令。该数据源必须用只能读 `demo_sales` 的专用只读角色，不能复用应用库账号（应用库里有 `users.password_hash` 与 `datasources` 的密文）。
 
 ### 2.6 错误码
 

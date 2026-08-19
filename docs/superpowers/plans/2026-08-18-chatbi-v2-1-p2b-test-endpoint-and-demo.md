@@ -1182,6 +1182,19 @@ EOF
 2. 按 Step 5 写 `seed-demo`，按 Step 2 后半把五条测试补进 `tests/test_demo_sales.py`（该文件顶部已写明这批测试为何缺席）。
 3. 跑 Step 7（预期 `195 passed`）与 Step 8 的五条反向验证。
 
+### Task 7 只做了 Step 2（2026-08-19 复核）
+
+复核了两个阻塞点，**两个都还在**：
+
+- `select rolcreaterole from pg_roles where rolname = current_user` → `False`。Task 6 后半仍然阻塞。
+- `wsl -l -v` 仍然无任何发行版，`docker version` 的 Server 段仍连不上 npipe。Task 7 Step 1 仍然阻塞。
+
+因此本次只推进了**不依赖 Docker 守护进程**的那一步：写 `docker/compose.test.yml`（Step 2），并用 `docker compose -f compose.test.yml config --quiet` 验证语法——这条命令只做解析，不连守护进程，所以在装 WSL2 之前就能验。加了两条计划里没有的注释：不挂 volume 的理由（契约测夹具自建表，残留数据只会让复现变难），以及把 MySQL 8.4 / ClickHouse 固定小版本的取舍从正文搬进文件本身。
+
+Step 3 之后**没有做任何一步**，也不会先写代码等真库——Task 7 的全部内容就是「对真库跑」，提前改 `_CAN_WRITE_SQL` 属于猜。
+
+**顺带清掉了一笔计划自己记下的欠账**：spec §2.5 原文说示例库「自动注册成一个数据源」，与本份把注册拆到 CLI 的实现不符。自查记录里写了「这条要同步进 spec §2.5 的措辞」但一直没做，本次改了 spec 第 218 行，连理由（seal 需要主密钥，不该把跑迁移和持有主密钥绑死）与只读角色的要求一起写进去。
+
 ---
 
 ## 交接清单（P2c 与 P3 要消费的签名）
