@@ -22,7 +22,11 @@ def test_creates_a_user_with_a_hashed_password(db_session: Session) -> None:
 
 def test_rejects_a_duplicate_email_case_insensitively(db_session: Session) -> None:
     create_user(
-        db_session, email="boss@example.com", display_name="老板", password="pw-12345678", role="admin"
+        db_session,
+        email="boss@example.com",
+        display_name="老板",
+        password="pw-12345678",
+        role="admin",
     )
 
     with pytest.raises(ApiError) as excinfo:

@@ -68,9 +68,9 @@ def get_master_key() -> MasterKey:
     secret = get_settings().secret_key
     # 声明类型是 SecretStr | None，但 Settings 的 after-validator 保证实例化后必非 None
     assert secret is not None, "主密钥未配置——Settings 校验本应已拦下"
-    material = HKDF(
-        algorithm=hashes.SHA256(), length=KEY_BYTES, salt=None, info=HKDF_INFO
-    ).derive(secret.get_secret_value().encode("utf-8"))
+    material = HKDF(algorithm=hashes.SHA256(), length=KEY_BYTES, salt=None, info=HKDF_INFO).derive(
+        secret.get_secret_value().encode("utf-8")
+    )
     return MasterKey(material)
 
 

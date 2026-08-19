@@ -67,9 +67,7 @@ def test_a_user_gets_at_most_one_grant_row_per_datasource(
     """复合主键：授权是「有/无」而不是可累积的列表，重复插入必须撞主键。"""
     analyst = make_user(role="analyst")
     datasource = make_datasource()
-    db_session.add(
-        DatasourceGrant(datasource_id=datasource.id, user_id=analyst.id, can_query=True)
-    )
+    db_session.add(DatasourceGrant(datasource_id=datasource.id, user_id=analyst.id, can_query=True))
     db_session.flush()
 
     with pytest.raises(IntegrityError), db_session.begin_nested():
@@ -85,9 +83,7 @@ def test_deleting_a_datasource_cascades_to_its_grants(
     """否则删掉再重建同名数据源会继承上一代的授权行。"""
     analyst = make_user(role="analyst")
     datasource = make_datasource()
-    db_session.add(
-        DatasourceGrant(datasource_id=datasource.id, user_id=analyst.id, can_query=True)
-    )
+    db_session.add(DatasourceGrant(datasource_id=datasource.id, user_id=analyst.id, can_query=True))
     db_session.flush()
 
     db_session.delete(datasource)
@@ -99,9 +95,7 @@ def test_deleting_a_datasource_cascades_to_its_grants(
 def test_deleting_a_user_cascades_to_their_grants(db_session, make_user, make_datasource) -> None:
     analyst = make_user(role="analyst")
     datasource = make_datasource()
-    db_session.add(
-        DatasourceGrant(datasource_id=datasource.id, user_id=analyst.id, can_query=True)
-    )
+    db_session.add(DatasourceGrant(datasource_id=datasource.id, user_id=analyst.id, can_query=True))
     db_session.flush()
 
     db_session.delete(analyst)

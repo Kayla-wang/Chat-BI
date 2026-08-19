@@ -160,9 +160,7 @@ def seeded_table(driver_target) -> str:
     driver.execute(
         info, dialect.create_table_sql.format(table=table), timeout_seconds=30, max_rows=1
     )
-    driver.execute(
-        info, dialect.insert_row_sql.format(table=table), timeout_seconds=30, max_rows=1
-    )
+    driver.execute(info, dialect.insert_row_sql.format(table=table), timeout_seconds=30, max_rows=1)
     try:
         yield table
     finally:

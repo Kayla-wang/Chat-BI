@@ -43,9 +43,7 @@ def test_creating_a_duplicate_email_returns_409(admin_client: TestClient) -> Non
     admin_client.post("/api/users", json=PAYLOAD)
 
     # 大小写不同也算重复：normalize_email 之后撞同一个唯一索引
-    response = admin_client.post(
-        "/api/users", json=PAYLOAD | {"email": "NEW.ANALYST@example.com"}
-    )
+    response = admin_client.post("/api/users", json=PAYLOAD | {"email": "NEW.ANALYST@example.com"})
 
     assert response.status_code == 409
     assert response.json()["code"] == "EMAIL_ALREADY_EXISTS"

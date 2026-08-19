@@ -49,8 +49,6 @@ def delete_session(session: Session, session_id: str) -> None:
 
 
 def purge_expired(session: Session) -> int:
-    result = session.execute(
-        delete(UserSession).where(UserSession.expires_at <= datetime.now(UTC))
-    )
+    result = session.execute(delete(UserSession).where(UserSession.expires_at <= datetime.now(UTC)))
     session.flush()
     return result.rowcount or 0

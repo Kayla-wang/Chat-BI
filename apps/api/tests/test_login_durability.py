@@ -38,9 +38,11 @@ def _session_row_count(factory: sessionmaker[Session], user_id: uuid.UUID) -> in
     verify_engine = create_engine(os.environ["CHATBI_DATABASE_URL"])
     try:
         with verify_engine.connect() as conn, Session(bind=conn) as verify_session:
-            rows = verify_session.execute(
-                select(UserSession).where(UserSession.user_id == user_id)
-            ).scalars().all()
+            rows = (
+                verify_session.execute(select(UserSession).where(UserSession.user_id == user_id))
+                .scalars()
+                .all()
+            )
             return len(rows)
     finally:
         verify_engine.dispose()

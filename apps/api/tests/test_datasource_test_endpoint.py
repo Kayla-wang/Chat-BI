@@ -29,9 +29,7 @@ class _FakeDriver:
         self.calls.append(info.host)
         if self._fail:
             raise ConnectionFailed()
-        return ProbeResult(
-            reachable=True, server_version="FakeDB 1.2.3", can_write=self._can_write
-        )
+        return ProbeResult(reachable=True, server_version="FakeDB 1.2.3", can_write=self._can_write)
 
 
 @pytest.fixture
@@ -159,8 +157,6 @@ def test_unknown_datasource_returns_404(admin_client: TestClient) -> None:
 def test_the_test_route_declares_its_error_envelope() -> None:
     from chatbi.main import app
 
-    responses = app.openapi()["paths"]["/api/datasources/{datasource_id}/test"]["post"][
-        "responses"
-    ]
+    responses = app.openapi()["paths"]["/api/datasources/{datasource_id}/test"]["post"]["responses"]
 
     assert {"200", "401", "403", "404", "503"} <= set(responses)

@@ -151,9 +151,7 @@ def test_admin_patches_a_datasource(admin_client: TestClient, make_datasource) -
     assert response.json()["host"] == "new.internal"
 
 
-def test_patching_the_password_does_not_echo_it(
-    admin_client: TestClient, make_datasource
-) -> None:
+def test_patching_the_password_does_not_echo_it(admin_client: TestClient, make_datasource) -> None:
     datasource = make_datasource()
 
     response = admin_client.patch(

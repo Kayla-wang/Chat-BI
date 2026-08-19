@@ -57,9 +57,7 @@ def test_create_round_trips_the_password(db_session, make_user) -> None:
 def test_create_without_a_password_leaves_both_secret_columns_null(db_session, make_user) -> None:
     admin = make_user(role="admin")
 
-    datasource = create_datasource(
-        db_session, payload=_payload(password=None), created_by=admin.id
-    )
+    datasource = create_datasource(db_session, payload=_payload(password=None), created_by=admin.id)
 
     assert datasource.secret_ciphertext is None
     assert datasource.secret_nonce is None

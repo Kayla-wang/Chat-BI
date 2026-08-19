@@ -182,7 +182,9 @@ class ClickHouseDriver:
         fetched = tuple(tuple(row) for row in result.result_rows)
         rows, truncated = truncate(fetched, max_rows)
         columns = tuple(
-            ColumnSchema(name=name, data_type=str(type_name), is_numeric=_is_numeric(str(type_name)))
+            ColumnSchema(
+                name=name, data_type=str(type_name), is_numeric=_is_numeric(str(type_name))
+            )
             for name, type_name in zip(result.column_names, result.column_types, strict=True)
         )
         return QueryResult(columns=columns, rows=rows, row_count=len(rows), truncated=truncated)
@@ -195,8 +197,6 @@ class ClickHouseDriver:
         """
         client = self._client(info)
         try:
-            client.command(
-                "kill query where query_id = %(qid)s", parameters={"qid": handle.token}
-            )
+            client.command("kill query where query_id = %(qid)s", parameters={"qid": handle.token})
         finally:
             client.close()

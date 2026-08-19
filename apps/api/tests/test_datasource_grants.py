@@ -107,9 +107,7 @@ def test_revoking_a_grant_hides_the_datasource_again(
     assert _names(admin_client) == []
 
 
-def test_revoking_twice_is_idempotent(
-    admin_client: TestClient, make_user, make_datasource
-) -> None:
+def test_revoking_twice_is_idempotent(admin_client: TestClient, make_user, make_datasource) -> None:
     """本段不新增错误码，而「授权本来就不存在」没有语义正确的现成码。"""
     datasource = make_datasource()
     analyst = make_user(role="analyst")
@@ -164,9 +162,7 @@ def test_listing_grants_requires_admin(
     assert client.get(f"/api/datasources/{datasource.id}/grants").status_code == 403
 
 
-def test_granting_on_an_unknown_datasource_returns_404(
-    admin_client: TestClient, make_user
-) -> None:
+def test_granting_on_an_unknown_datasource_returns_404(admin_client: TestClient, make_user) -> None:
     analyst = make_user(role="analyst")
 
     response = admin_client.put(
@@ -178,9 +174,7 @@ def test_granting_on_an_unknown_datasource_returns_404(
     assert response.json()["code"] == "DATASOURCE_NOT_FOUND"
 
 
-def test_granting_to_an_unknown_user_returns_404(
-    admin_client: TestClient, make_datasource
-) -> None:
+def test_granting_to_an_unknown_user_returns_404(admin_client: TestClient, make_datasource) -> None:
     """P1 遗留 5：USER_NOT_FOUND 终于有调用方。
 
     没有这道检查，授权表会攒下指向不存在用户的行——外键会挡住，但错误表面会是

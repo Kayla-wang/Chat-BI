@@ -74,9 +74,7 @@ def get_one(datasource: _Target) -> Datasource:
     return datasource
 
 
-@router.patch(
-    "/{datasource_id}", response_model=DatasourceResponse, responses=_TARGET | _CONFLICT
-)
+@router.patch("/{datasource_id}", response_model=DatasourceResponse, responses=_TARGET | _CONFLICT)
 def patch(payload: DatasourceUpdate, datasource: _Target, db: _Db, _admin: _Admin) -> Datasource:
     """_admin 参数没有函数体内的用处，它就是那道 403 闸门。删了功能照样正常。"""
     return update_datasource(db, datasource, payload)

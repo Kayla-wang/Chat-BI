@@ -171,9 +171,7 @@ def test_identity_provider_is_an_overridable_dependency(client: TestClient, make
     assert response.status_code == 200
 
 
-def test_logout_restates_the_cookie_attributes_when_deleting(
-    client: TestClient, make_user
-) -> None:
+def test_logout_restates_the_cookie_attributes_when_deleting(client: TestClient, make_user) -> None:
     """P1 §10.3 遗留 6：删除指令与设置指令的属性一致，浏览器不会各自解读。"""
     make_user(email="ann@example.com", password="pw-12345678")
     client.post("/api/auth/login", json={"email": "ann@example.com", "password": "pw-12345678"})

@@ -214,6 +214,4 @@ def _column_from_description(item) -> ColumnSchema:
     """把游标描述里的 OID 翻成类型名。取不到就退回 OID 的字符串形式。"""
     type_info = psycopg.postgres.types.get(item.type_code)
     type_name = type_info.name if type_info is not None else str(item.type_code)
-    return ColumnSchema(
-        name=item.name, data_type=type_name, is_numeric=type_name in _NUMERIC_TYPES
-    )
+    return ColumnSchema(name=item.name, data_type=type_name, is_numeric=type_name in _NUMERIC_TYPES)
