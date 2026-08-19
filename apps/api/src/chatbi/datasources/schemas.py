@@ -77,6 +77,50 @@ class DatasourceTestResult(BaseModel):
     is_readonly_verified: bool
 
 
+class ColumnSchemaResponse(BaseModel):
+    """一列的合并结果。
+
+    comment 与 note **并存**，谁都不覆盖谁（设计 §4）：前端要能显示来源差异
+    （「DBA 在库里写的」与「张三补的」可信度不同），P3 的 prompt 构建自己决定怎么拼。
+    做成单字段会提前替 P3 做掉这个决定，且不可逆。
+    """
+
+    col_id: str
+    """PATCH 时原样回传。**前端不要自己拼**——拼接规则一改两侧就漂移，而漂移的
+    表现是「改注释的请求 404」，很难指向后端。"""
+
+    name: str
+    data_type: str
+    is_nullable: bool
+    is_numeric: bool
+    comment: str | None  # 库原生注释；None = 库里没写
+    note: str | None  # 人工补的注释；None = 没人补过
+
+
+class TableSchemaResponse(BaseModel):
+    schema_name: str
+    name: str
+    comment: str | None  # 库原生表注释。不做表级人工注释（F-201 AC1 只说列）
+    columns: list[ColumnSchemaResponse]
+
+
+class SchemaResponse(BaseModel):
+    fetched_at: datetime
+    """元数据是什么时候拉的。**没有 TTL**——新鲜度交给界面展示（这个时间 + 一个刷新
+    按钮），不由后端猜多久算过期。私有化部署里 schema 的变更节奏差异极大，任何默认
+    TTL 都会在一半环境里是错的。"""
+
+    tables: list[TableSchemaResponse]
+
+
+class ColumnNoteUpdate(BaseModel):
+    note: str = Field(max_length=2000)
+    """允许空字符串，语义是「清空这条注释」——保留行、note = ''，不删行。删行会让
+    updated_by / updated_at 的审计痕迹消失，而「谁把注释清掉了」和「谁写了注释」
+    一样值得留（spec §4.6）。
+    """
+
+
 class GrantRequest(BaseModel):
     user_id: uuid.UUID
     can_query: bool = True
