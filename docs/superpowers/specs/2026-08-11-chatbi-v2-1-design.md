@@ -161,7 +161,7 @@ HITL 的本质是链路中间有一段**不确定时长的人类思考**：草�
 | GET/POST/PATCH/DELETE | `/api/datasources[/{id}]` | 数据源 CRUD（含 `datasource_grants`） |
 | POST | `/api/datasources/{id}/test` | 就地测连，并探测账号是否具备写权限（有则告警，见 §4.3） |
 | GET | `/api/datasources/{id}/schema` | 表结构（走缓存，`?refresh=1` 强制重拉） |
-| PATCH | `/api/datasources/{id}/schema/columns/{col_id}` | 人工补注释（F-201 AC1） |
+| PATCH | `/api/datasources/{id}/schema/columns/{col_id}` | 人工补注释（F-201 AC1）。`col_id` = `schema.table.column`，由 `GET /schema` 发出、客户端原样回传；服务端**反查而不解析**（标识符本身可以含点），命中 0 → 404、≥2 → 409 |
 | POST | `/api/sql/validate` | 编辑器停止输入 300ms 后调用，返回 guard 判定 |
 | GET | `/api/conversations` · `/api/runs` | 历史列表（分页、按数据源/状态过滤） |
 | GET | `/api/runs/{id}` | 回放载荷：问题、chips、两版 SQL、结果摘要、事件流 |
@@ -188,10 +188,14 @@ datasource_grants(datasource_id uuid fk, user_id uuid fk, can_query bool,
                   primary key (datasource_id, user_id))
 
 schema_cache(datasource_id uuid pk fk, fetched_at timestamptz, payload jsonb)
-column_notes(id uuid pk, datasource_id uuid fk, table_name text, column_name text,
+column_notes(id uuid pk, datasource_id uuid fk,
+             schema_name text, table_name text, column_name text,
              note text, updated_by uuid fk, updated_at timestamptz,
-             unique (datasource_id, table_name, column_name))
+             unique (datasource_id, schema_name, table_name, column_name))
 -- 注释单独存：schema_cache 会被 refresh 整体覆盖，人工补的注释不能跟着丢
+-- 唯一键含 schema_name（P2c 实施时加的，本节初稿只有三列）：Postgres 的 reflect()
+-- 返回所有非系统 schema，三列键会让 demo_sales.orders 与 public.orders 撞成同一条
+-- 注释——而失败方式是静默挂到错的列上，界面上完全看不出来
 
 conversations(id uuid pk, user_id uuid fk, datasource_id uuid fk, title text, created_at)
 

@@ -1083,7 +1083,9 @@ export CHATBI_TEST_CLICKHOUSE_DSN=clickhouse://chatbi:chatbi@localhost:8124/chat
 uv run pytest tests/drivers -v
 ```
 
-预期：**39 passed、0 skipped**（13 条 × 3 个 kind），末尾那行是 `skip 合计 0，其中驱动契约测 0`。
+预期：**42 passed、0 skipped**（14 条 × 3 个 kind），末尾那行是 `skip 合计 0，其中驱动契约测 0`。
+
+> **P2c 改过这个数**：契约套件从 13 条变 14 条——P2c1 Task 1 加了 `test_reflect_carries_comments`（Postgres 的 `reflect()` 当时对每一列都返回 `comment=None`）。门禁那天看到 42 是对的，看到 39 说明有一个 kind 少跑了一条。同时**要额外核对 MySQL 与 ClickHouse 的表注释**：那两处代码是 P2c1 在没有 Docker 的机器上写的，从未对真库跑过，核对项见 p2c1 计划的 Task 1 Step 5 末尾三条。
 
 **这一步大概率不会一次通过**，预期要处理的几类问题：
 
@@ -1124,7 +1126,9 @@ cd apps/api
 uv run pytest -q && uv run ruff check src tests
 ```
 
-预期：**`221 passed`、`0 skipped`**（Task 6 后的 195 passed + 26 条原本 skip 的契约测）。末尾必须是 `skip 合计 0，其中驱动契约测 0`。
+预期：**`0 skipped`**，末尾必须是 `skip 合计 0，其中驱动契约测 0`。
+
+> **passed 的绝对数已被 P2c 推高**：本份初稿写的 `221` 是「Task 6 后的 195 + 26 条原本 skip 的契约测」。P2c 之后基线变成 `226 passed / 28 skipped`（P2c 完成时），所以门禁那天该看到的是 **226 + 28 = 254 passed / 0 skipped**——前提是 Task 6 后半（`seed-demo` 那 5 条）仍未做。**别把这个数当硬断言**：真正的验收项是「skip 数为 0」（spec §8.1），passed 的绝对数会随每段新增测试而变。跑之前先记下当时的 `N passed / M skipped`，门禁后应该是 `N+M passed / 0 skipped`。
 
 把三个库的实际版本记进上游那份的「实施期的偏差」一节（`select version()` / `select version()` / `select version()` 三条的输出），P2c 与 P3 排查行为差异时要用。
 
@@ -1220,7 +1224,7 @@ chatbi.cli.DEMO_DATASOURCE_NAME = "示例销售库" · DEMO_SCHEMA = "demo_sales
 **P2c F-201 元数据接入**
 - `/schema` 端点复用 `driver_for` 与 `connection_info`，调 `reflect()`。**不要**再写一条组装路径。
 - `schema_cache.payload` 存 `SchemaSnapshot` 的 JSON。它是 frozen dataclass，`dataclasses.asdict()` 可用。
-- 示例库的列注释已经在 `ColumnSchema.comment` 里（`reflect()` 会带出来），所以 P2c 的「人工补注释」在示例库上一开始就有对照：库里的原生注释 vs `column_notes` 里人工补的，合并策略要能演示这两者的区别。
+- ~~示例库的列注释已经在 `ColumnSchema.comment` 里（`reflect()` 会带出来）~~ —— **这句当时是错的**，对 Postgres 不成立：`reflect()` 查的 `information_schema.columns` 没有注释列，每一列、每一张表都返回 `comment=None`。P2c1 Task 1 修好之后（commit `fa54276`，改走 `pg_catalog` + `col_description` / `obj_description`）这句才成立。已实测：`demo_sales.customers` 现在能读到 `客户 ID` / `客户名称` / `所在城市` / `客户分层：...`，表注释是 `客户`。修好后，P2c 的「人工补注释」在示例库上确实有对照：库里的原生注释 vs `column_notes` 里人工补的，两者在响应里是 `comment` 与 `note` 两个并存字段。
 - `demo_sales` 是 P2c 唯一不需要 Docker 就能验的数据源——它在应用库里。
 
 **P3 执行器**

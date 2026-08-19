@@ -1951,6 +1951,16 @@ chatbi.errors.CONNECTION_ERROR = ("CONNECTION_ERROR", "无法连接到数据库�
 
 **这个缺陷的表现值得记住**：它让**每一个** `execute()` 调用失败，于是 5 个用 `seeded_table` 夹具的测试报 ERROR、另 5 个报 FAIL，只有 3 条不碰 `execute()` 的通过。第一眼极像「夹具写错了」——实际根因在被夹具调用的那一行。**契约测的夹具本身依赖被测代码时，夹具报错要先怀疑被测代码。**
 
+### 事后（P2c 期间）发现的第二个缺陷：`reflect()` 不取注释
+
+**Task 2 的 `_REFLECT_SQL` 查 `information_schema.columns`，那张视图没有注释列**，所以 Postgres 的 `reflect()` 对每一列、每一张表都返回 `comment=None`。MySQL 与 ClickHouse 带出了列注释，但两者都没取表注释。已在 P2c1 Task 1 修完（commit `fa54276`）：改走 `pg_catalog` + `col_description(c.oid, a.attnum)` / `obj_description(c.oid, 'pg_class')`。
+
+**漏检的原因比缺陷本身更值得记：本份写的 13 条契约测没有一条断言注释。** 于是一个「注释永远为空」的实现在整套契约下完全正确，缺陷活到了下一段。P2c1 补了第 14 条 `test_reflect_carries_comments`，三个 kind 都跑——因此**本份 Task 7 的门禁目标从 39 变 42**（已在第二份计划里改掉）。
+
+修的时候踩到一个坑，改这段 SQL 前必读：类型名要用 `a.atttypid::regtype::text`，**不能**用 `format_type(a.atttypid, a.atttypmod)`。后者对 `numeric(12,2)` 返回带精度的串，它不在 `_NUMERIC_TYPES` 里，会把 `is_numeric` 静默变成 `False`——前端据此选图，坏掉的方式是「图表选项里少了一列」，不报错。已实测 `regtype` 与原先 `information_schema.data_type` 在 integer / text / numeric / timestamptz 上逐一相同，所以换 SQL 没有改变 `data_type` 的既有语义。
+
+`is_nullable` 的读法也跟着变了：Postgres 现在是 SQL 里 `not a.attnotnull` 直接给 `bool`，**不再**是 `is_nullable == "YES"` 的字符串比较；MySQL 仍然是字符串比较（它还在查 information_schema）。两个驱动这一处不同是对的，别为了「看起来一致」把其中一个改成另一个的写法。
+
 **实装版本比计划的下限高不少**（`>=` 约束都满足，但 API 细节可能与计划假设不同，门禁时留意）：
 
 | 包 | 计划下限 | 实装 |
