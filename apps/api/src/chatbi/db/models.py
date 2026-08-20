@@ -10,6 +10,16 @@ from chatbi.db.base import Base
 
 ROLES: tuple[str, str, str] = ("admin", "analyst", "viewer")
 DATASOURCE_KINDS: tuple[str, str, str] = ("postgres", "mysql", "clickhouse")
+# 与 migration 0005 的 ck_runs_status 一致（那边是字面量，migration 是历史快照）。
+# 两者一致由 tests/test_run_models.py 钉住。
+RUN_STATUSES: tuple[str, ...] = (
+    "drafted",
+    "blocked",
+    "running",
+    "succeeded",
+    "failed",
+    "cancelled",
+)
 
 
 class User(Base):
@@ -144,4 +154,109 @@ class ColumnNote(Base):
         nullable=False,
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
+    )
+
+
+class Conversation(Base):
+    """一次多轮问答的容器（上游 spec §2.2：省略 conversation_id 时新建）。
+
+    title 可空：P3c 决定它怎么来（截取问题或让 LLM 起名），本段不做。
+    """
+
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid(), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    datasource_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("datasources.id", ondelete="RESTRICT"), nullable=False
+    )
+    title: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class Run(Base):
+    """一次问答 + 执行的完整记录。审计的主体（上游 spec §4.6）。
+
+    三个 SQL 列的分工是 F-302 AC2 的 diff 两侧 + 实际下发：
+      generated_sql  LLM 原始生成版（左侧）
+      final_sql      用户批准的版本（右侧）
+      effective_sql  guard 注入 LIMIT/策略后真正下发的语句
+    三者都可空：drafted 时只有 generated_sql，blocked 时可能只有 final_sql。
+
+    status 的 CHECK 只在 migration 里，与 Datasource.kind 一致。
+    """
+
+    __tablename__ = "runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid(), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    datasource_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("datasources.id", ondelete="RESTRICT"), nullable=False
+    )
+    question: Mapped[str] = mapped_column(sa.Text(), nullable=False)
+    chips: Mapped[list[Any] | None] = mapped_column(JSONB(), nullable=True)
+    generated_sql: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
+    final_sql: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
+    effective_sql: Mapped[str | None] = mapped_column(sa.Text(), nullable=True)
+    status: Mapped[str] = mapped_column(sa.String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(sa.String(50), nullable=True)
+    row_count: Mapped[int | None] = mapped_column(sa.Integer(), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(sa.Integer(), nullable=True)
+    llm_provider: Mapped[str | None] = mapped_column(sa.String(50), nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(sa.String(100), nullable=True)
+    parent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("runs.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    executed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True), nullable=True)
+
+
+class RunEvent(Base):
+    """append-only 的事件流（上游 spec §2.5、§4.6，F-304）。
+
+    **仓储层只暴露 append 与 list，没有 UPDATE/DELETE 路径。** 别在这里加 relationship，
+    也别给它写 update 方法——F-304 的可审计承诺全靠这一点。
+
+    回放按 seq 排序，**不按 at**：同毫秒内的事件顺序不确定。
+    """
+
+    __tablename__ = "run_events"
+
+    id: Mapped[int] = mapped_column(sa.BigInteger(), primary_key=True, autoincrement=True)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
+    )
+    seq: Mapped[int] = mapped_column(sa.Integer(), nullable=False)
+    step: Mapped[str] = mapped_column(sa.String(30), nullable=False)
+    status: Mapped[str] = mapped_column(sa.String(20), nullable=False)
+    duration_ms: Mapped[int | None] = mapped_column(sa.Integer(), nullable=True)
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB(), nullable=True)
+    at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class RunResultPreview(Base):
+    """结果摘要，只存前 100 行（上游 spec §2.5）。回放时重跑取全量。"""
+
+    __tablename__ = "run_result_previews"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        sa.Uuid(), sa.ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True
+    )
+    columns: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    rows: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    truncated: Mapped[bool] = mapped_column(
+        sa.Boolean(), nullable=False, server_default=sa.text("false")
     )
