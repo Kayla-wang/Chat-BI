@@ -71,13 +71,14 @@ def validate_sql(sql: str, *, dialect: str, max_rows: int, policy: Policy) -> Gu
     if blocked is not None:
         return _rejected(WRITE_BLOCKED, blocked)
 
-    # 闸 3 在 Task 2 接上。本任务先原样输出，limit_applied 恒 False。
+    effective_sql, limit_applied, warnings = _apply_limit(root, dialect=dialect, max_rows=max_rows)
     return GuardVerdict(
         ok=True,
-        effective_sql=root.sql(dialect=dialect),
+        effective_sql=effective_sql,
         code=None,
         reason=None,
-        limit_applied=False,
+        limit_applied=limit_applied,
+        warnings=warnings,
     )
 
 
@@ -104,6 +105,53 @@ def _write_reason(root: exp.Expression) -> str | None:
     if root.args.get("into") is not None:
         return "SELECT INTO 会创建表"
 
+    return None
+
+
+def _apply_limit(
+    root: exp.Expression, *, dialect: str, max_rows: int
+) -> tuple[str, bool, tuple[str, ...]]:
+    """闸 3。返回 (effective_sql, limit_applied, warnings)。
+
+    exp.Union 也有 .limit()，注入会落在最外层（实测），所以这里不需要按根类型分支。
+    """
+    limit_node = root.args.get("limit")
+
+    # ClickHouse 的 `LIMIT n BY x`：类型仍是 exp.Limit，但多一个 expressions（BY 的那些
+    # 列）。它的语义是「每个 x 取 n 行」，总行数无上界；而 sqlglot 对同一条语句上两个
+    # LIMIT 直接 ParseError，所以没有「保留 BY 又加总上限」的写法。
+    #
+    # 原样保留 + warning（设计 §2.2）。**这不留缺口**：驱动层取 max_rows + 1 行后
+    # truncate()，返回行数在那一层是硬保证的。闸 3 的额外价值是减少库侧扫描量。
+    if limit_node is not None and limit_node.args.get("expressions"):
+        warning = f"该语句的库侧行数未受限，返回结果仍会被截断到 {max_rows} 行"
+        return root.sql(dialect=dialect), False, (warning,)
+
+    current = _row_cap(limit_node)
+    if current is not None and current <= max_rows:
+        # spec §4.3「已有 LIMIT 且更小则保留原值」。`<=` 而不是 `<`：正好等于上限的语句
+        # 已经合规，重写它只会让 effective_sql 与用户写的无谓地不同。
+        return root.sql(dialect=dialect), False, ()
+
+    return root.limit(max_rows).sql(dialect=dialect), True, ()
+
+
+def _row_cap(node: exp.Expression | None) -> int | None:
+    """读出语句现有的行数上限。读不出来就返回 None（调用方据此收紧）。
+
+    node 可能是 exp.Limit（数值在 args["expression"]）或 exp.Fetch（数值在
+    args["count"]）——**两者都放在 args["limit"] 里**。只认 exp.Limit 会让
+    `FETCH FIRST 5 ROWS ONLY` 被当成「没有上限」并覆盖掉，用户的「只要 5 行」变成
+    max_rows 行。
+
+    值不是整数字面量（例如 `LIMIT (select 5)`）时返回 None：无法静态判断它是否
+    ≤ max_rows，收紧是安全的方向。
+    """
+    if node is None:
+        return None
+    value = node.args.get("expression") or node.args.get("count")
+    if isinstance(value, exp.Literal) and value.is_int:
+        return int(value.this)
     return None
 
 
