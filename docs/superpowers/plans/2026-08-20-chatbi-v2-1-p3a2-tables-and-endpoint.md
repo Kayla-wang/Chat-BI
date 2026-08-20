@@ -19,7 +19,7 @@
 
 **开工前必须先读 p3a1 的「交接清单」一节**，Task 4 直接消费那里的三个签名（`validate_sql` / `GuardVerdict` / `Policy`），其中两条最容易踩：`dialect` 参数要的是 **sqlglot 的方言名**（由本份显式映射，不要直接传 `kind`），`max_rows` 要从 `Settings` 取并作为参数传入（`validate_sql` 不自己读 settings）。
 
-**起点是 p3a1 结束时的状态：`278 passed` / `28 skipped`。** 实测不是这个数就先回 p3a1 核对，别在错的基线上往前走。
+**起点是 p3a1 结束时的状态：`285 passed` / `28 skipped`**（实测值，commit `a7d1550`）。计划初稿写的 278 是算错的测试条数 + 少算了 p3a1 实施期多加的一条测试，见 p3a1 的偏差 1 与偏差 3。实测不是 285 就先回 p3a1 核对。
 
 **Task 3 不依赖 p3a1**（表与 guard 无关），所以两个任务的顺序可以换；但 Task 4 必须在 p3a1 之后。
 
@@ -51,7 +51,7 @@ export CHATBI_TEST_PG_DSN=postgresql://chatbi:chatbi@localhost:5432/chatbi_test
 
 - 原生 PostgreSQL 16（`localhost:5432`，`chatbi`/`chatbi`）。**本份不需要 Docker、不需要 Ollama、不需要 `CREATEROLE`。**
 - `CHATBI_TEST_MYSQL_DSN` / `CHATBI_TEST_CLICKHOUSE_DSN` 不设，那两个 kind 的契约测继续 skip 并计数（预期状态）。
-- **起点基线：`278 passed` / `28 skipped`**（p3a1 结束时）。开工前先跑一次确认，不符就先回 p3a1 核对。
+- **起点基线：`285 passed` / `28 skipped`**（p3a1 结束时实测）。开工前先跑一次确认，不符就先回 p3a1 核对。
 
 
 
@@ -742,7 +742,7 @@ TABLES = {
 uv run pytest tests/test_run_models.py tests/test_run_events.py -q && uv run pytest -q
 ```
 
-预期：两个文件 **12 passed**（7 建模 + 5 仓储），全量 **290 passed / 28 skipped**。
+预期：两个文件 **12 passed**（7 建模 + 5 仓储），全量 **297 passed / 28 skipped**。
 
 `test_migrations_roundtrip` 会真的 `downgrade base` 再 `upgrade head`，所以 0005 的 `downgrade()` 写错会在这里暴露，不需要单独测。
 
@@ -780,7 +780,7 @@ list_events 按 seq 排序而不是 at 或 id：同毫秒内的 at 顺序不确�
 
 其余三张表本段只有表与模型，仓储跟着各自的消费方（P3b/P3c/P3d）走。
 
-290 passed / 28 skipped。"
+297 passed / 28 skipped。"
 ```
 
 
@@ -1100,7 +1100,7 @@ ALL_ROUTERS: tuple[APIRouter, ...] = (
 uv run pytest tests/test_sql_router.py -q && uv run pytest -q
 ```
 
-预期：该文件 **10 passed**，全量 **300 passed / 28 skipped**。
+预期：该文件 **10 passed**，全量 **307 passed / 28 skipped**。
 
 `test_app_assembly.py::test_all_routers_are_mounted_on_the_real_app` **不需要改**（它遍历 `ALL_ROUTERS` 并对 OpenAPI paths 断言，自适应）。但注意它守不住「漏了 Step 5」——router 不在 `ALL_ROUTERS` 里就不会被遍历到；那种情况下红的是本文件的 10 条。两者各守一半。
 
@@ -1117,7 +1117,7 @@ uv run pytest tests/test_sql_router.py -q && uv run pytest -q
 
 ```bash
 uv run ruff check . && uv run ruff format --check .
-uv run pytest -q      # 300 passed / 28 skipped
+uv run pytest -q      # 307 passed / 28 skipped
 git add src/chatbi/guard/deps.py src/chatbi/api/sql_router.py src/chatbi/api/routers.py \
         src/chatbi/datasources/schemas.py tests/test_sql_router.py
 git commit -m "feat(api): POST /api/datasources/{id}/sql/validate
@@ -1133,7 +1133,7 @@ ParseError，同一条 SQL 两种判定。顺带让权限与 /test、/schema 自
 kind -> sqlglot 方言名显式映射而不是直接传 kind：三者现在同名，但两套命名空间
 的巧合不是契约。
 
-300 passed / 28 skipped。"
+307 passed / 28 skipped。"
 ```
 
 
@@ -1240,7 +1240,7 @@ POST /api/datasources/{id}/sql/validate -> 200（ok 在体内）| 401 | 403 | 40
 
 **不在本份的设计小节**：§1（闸 2）· §2（闸 3）· §3（`GuardVerdict` 与错误码）· §6.1（`Policy` 参数与护栏）——全部在 p3a1。
 
-**计数链核对**：278（p3a1 结束）→ 290（Task 3 +12）→ **300（Task 4 +10）**。skip 全程恒 28。实测与本表不符就停下核对，别改断言凑数。
+**计数链核对**：285（p3a1 结束，实测）→ 297（Task 3 +12）→ **307（Task 4 +10）**。skip 全程恒 28。（初稿写的 278/290/300 基于 p3a1 那个算错的条数，已按实测顺移。）实测与本表不符就停下核对，别改断言凑数。
 
 **占位符扫描**：无 TBD / TODO / 「类似 Task N」/ 无代码的「写测试」步骤。Task 4 Step 7 的第 3、4 条明确写了「预期全绿」以及为什么那不是 bug——那不是占位符，是一条如实记录的结论。
 

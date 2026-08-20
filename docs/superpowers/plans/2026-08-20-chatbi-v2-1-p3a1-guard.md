@@ -956,7 +956,63 @@ LIMIT n BY x 原样保留 + warning：它的语义是「每个 x 取 n 行」总
 
 ## 实施期的偏差（执行中回填）
 
-（开工前为空。每个任务做完就记：实测计数与预期不符的地方、对计划的偏离及理由、反向验证里出现的意外结果。**`sqlglot` 的实测版本号必须记在这里**——三道检查全靠它的节点类名与 arg 名。P1/P2 四次的经验是攒着必漏，发现即回填。）
+### 两个任务都已完成（2026-08-20）
+
+| 任务 | commit | 实测 | 计划预期 |
+|---|---|---|---|
+| Task 1 闸 2 | `8d8e19a` | **268 passed** / 28 skipped | 263（计划算错了，见偏差 1） |
+| Task 2 闸 3 | `a7d1550` | **285 passed** / 28 skipped | 278（同上，且多加了一条测试） |
+
+**`sqlglot` 实测版本：30.17.0**，与写计划时探测的版本一致。三道检查依赖的节点类名与 arg 名（`exp.Insert`…、`args["into"]`、`args["limit"]`、`exp.Limit.args["expression"]`、`exp.Fetch.args["count"]`、`LIMIT BY` 的 `args["expressions"]`）全部与探测结果相符，没有一处需要调整。**升级 sqlglot 大版本后要重跑 `tests/test_guard_gate2.py` 与 `test_guard_gate3.py`。**
+
+`validator.py` 最终 **166 行**（200 上限内，闸 2 单独时是 118 行），没有触发「搬去 `guard/limits.py`」那条预案。
+
+### 偏差 1：计划里的测试条数算错了
+
+Task 1 Step 6 写「37 passed」，实测 **42**。停下数了一遍：计划里列的算式本身是对的（`10 + 3 + 1 + 2 + 2 + 3 + 4 + 4 + 8 + 2 + 3`），**加起来就是 42，我把它写成了 37**。是纯算术错误，不是清单被改过。连带全量的 263 也该是 268。
+
+Task 2 的 278 同理顺移成 285（另含偏差 3 多加的 2 条）。**p3a2 的起点基线因此从 278 改成 285**，已回填进那份计划。
+
+### 偏差 2：Task 2 Step 2 的「假性通过」比计划预告的多两条
+
+计划预告 `test_a_smaller_limit_is_kept` 与 `test_a_rejected_statement_has_no_effective_sql` 两条会在闸 3 未实现时假性通过。实测是 **4 条**（11 failed / 4 passed），多出：
+
+- `test_a_limit_exactly_at_the_cap_is_kept`
+- `test_fetch_first_within_the_cap_is_left_alone`
+
+原因一样：Task 1 的实现「原样输出 + `limit_applied` 恒 False」正好满足这两条的断言。**可预期，不是问题**——它们在反向验证里都被证明有专属守卫（反向 3 与反向 1 各红一条）。
+
+### 偏差 3：比计划多加了一条测试（一条真实的 500 路径）
+
+Task 2 Step 5 的反向验证第 4 条（`_row_cap` 去掉 `value.is_int` 判断）**按计划预期全绿**，计划把它记为「一条没有守卫的路径」，并说「要守就另加一条 `LIMIT '5'` 的用例」。
+
+顺手探了一下这个类型到底会怎样，发现问题比「语义不精确」严重：
+
+```
+select * from t limit '5'    value=Literal  is_int=False
+select * from t limit 5.5    value=Literal  is_int=False
+```
+
+去掉 `is_int` 后两者都会走到 `int(value.this)`，而 `int("5.5")` 抛 **`ValueError`** —— 也就是一条**能被一条畸形 SQL 打崩的 500 路径**，而闸 3 是安全红线代码。
+
+加了 `test_a_literal_that_is_not_an_integer_is_tightened`（参数化两条）。加完重跑那条反向验证，从「全绿」变成红 2 条——那条路径现在有守卫了。**这是对计划的一处主动改进，成本两行、收益是堵掉一个崩溃路径。**
+
+### 反向验证的结果（11 条全部成立）
+
+闸 2 六条里最值得记的是第 1、2 条互为对照，实测**完全符合设计 §1.4 的预期**：
+
+| 反向验证 | 红 | 绿 |
+|---|---|---|
+| 删掉整树扫描（第 2 道） | data-modifying CTE **1 条** | 41 条，含 3 条 `SELECT INTO` |
+| 删掉 `into` 检查（第 3 道） | `SELECT INTO` **3 条** | 39 条，含 data-modifying CTE |
+
+**两道检查各守一个缺口，谁都兜不住谁**——这是「三道分开写而不是合成一个函数」这个决定的实证。
+
+其余各条也都只红它该守的：白名单加 `exp.Command` → 只红 3 条未知语法；去掉 `exp.Union` → 只红 3 条 union；`parse_one()` → 只红多语句那条（尾随分号那条保持绿）；policy 护栏改 `pass` → 只红 policy 那两条。闸 3 五条同理，其中反向 1（`_row_cap` 只读 `expression`）只红 FETCH 那条而 `test_a_smaller_limit_is_kept` **保持绿**，证明了「普通 LIMIT 上两种实现表现相同，只有 FETCH 那条能分辨」。
+
+### 一处 ruff 的小插曲
+
+`_apply_limit(...)` 的调用我手写成了三行，`ruff format` 要把它合成一行（100 字符内）。跑 `ruff format` 修掉即可。**教训与 P2c Task 3 同形**：新代码写完先跑一次 `ruff format`，别攒到提交前。
 
 ---
 
