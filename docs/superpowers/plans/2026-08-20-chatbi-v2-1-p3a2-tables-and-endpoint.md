@@ -1144,21 +1144,21 @@ kind -> sqlglot 方言名显式映射而不是直接传 kind：三者现在同�
 
 这三处都是 P3a 对上游 spec 的**有意偏离**（设计 §9.1）。不回填的后果具体：下一个读 spec 的人会以为实现写错了，或者照 spec 重写一遍已经被证伪的做法。
 
-- [ ] **回填 1：§2.4 的端点路径**
+- [x] **回填 1：§2.4 的端点路径** —— 已做（`2026-08-11` spec 第 165 行 + §3.5 那处对旧路径的引用也一起改了）
 
 `docs/superpowers/specs/2026-08-11-chatbi-v2-1-design.md` 的 REST 端点表里，`POST /api/sql/validate` 改成 `POST /api/datasources/{id}/sql/validate`，并加一句理由：dialect 由 `kind` 决定，不带数据源只能猜方言（`limit 3 by x` 在 clickhouse 下合法、在 postgres 下是 `ParseError`）。
 
-- [ ] **回填 2：§2.6 的错误码表加 `MULTIPLE_STATEMENTS`**
+- [x] **回填 2：§2.6 的错误码表加 `MULTIPLE_STATEMENTS`** —— 已做
 
 原表把多语句归在 `WRITE_BLOCKED`（「AST 命中写操作/DDL/多语句」）。拆开并写明理由：用户动作不同，一个要改掉写操作，一个要删掉分号后面的部分。
 
-- [ ] **回填 3：§4.3 闸 2 那段加一句「只看根节点不够」**
+- [x] **回填 3：§4.3 闸 2 那段加一句「只看根节点不够」** —— 已做，加了一张三道检查的表 + `exp.Command` 兜底。**顺带发现 spec 内部本来就不一致**：§5.1 早就点名要测「CTE 里藏 DML、`SELECT ... INTO`」，是 §4.3 的实现描述漏了那一层，两节现在对齐了
 
 原文是「sqlglot 解析后只放行 `SELECT` 与 `WITH`」。加一句：**照字面实现会留两个能真正写库的缺口**——data-modifying CTE 的根节点就是 `Select`，`SELECT INTO` 连整树扫描都躲得过（树内写节点为空，靠 `into` arg 识别）。两者都是实测确认的，详见 P3a 设计 §1.2、§1.3。
 
 顺带加一句 `exp.Command` 的兜底行为：sqlglot 对不认识的语句不抛 `ParseError` 而是给一个 `Command` 节点，所以白名单必须是严格白名单。
 
-- [ ] **回填 4：把本份与 p3a1 的实施结果写进各自的「实施期的偏差」，然后提交**
+- [x] **回填 4：把本份与 p3a1 的实施结果写进各自的「实施期的偏差」，然后提交** —— 已做
 
 ```bash
 git add docs/superpowers/specs/2026-08-11-chatbi-v2-1-design.md \
@@ -1171,7 +1171,68 @@ git commit -m "docs: 回填 P3a 的实施期偏差，并把三处有意偏离同
 
 ## 实施期的偏差（执行中回填）
 
-（开工前为空。每个任务做完就记：实测计数与预期不符的地方、对计划的偏离及理由、反向验证里出现的意外结果——**包括「反向验证全绿」这种结论**，那说明该路径没有守卫，是需要记下的事实而不是可以忽略的噪声。Task 4 Step 7 的第 3、4 条已经预告了两条这样的路径。）
+### 两个任务都已完成（2026-08-20/21）
+
+| 任务 | commit | 实测 | 计划预期 |
+|---|---|---|---|
+| Task 3 四张表 + append-only 仓储 | `9999141` | **299 passed** / 28 skipped | 297（多了 2 条测试，见偏差 1、2） |
+| Task 4 `/sql/validate` | `0e6cc47` | **310 passed** / 28 skipped | 307（同上，多 1 条） |
+
+migration 0005 的 up/down 双向由 `test_migrations_roundtrip` 自动覆盖，一次通过。
+
+### 偏差 1：一条测试原本守的是列宽而不是 CHECK
+
+计划里 `test_an_unknown_run_status_is_rejected` 用 `"definitely-not-a-status"`（**23 字符**）当非法状态值。`status` 是 `String(20)`，所以它先撞列长度限制抛 `DataError`，**在 CHECK 约束之前就炸了**——那条测试守的是列宽，不是 `ck_runs_status`。
+
+改成 `"nope"`（4 字符）后才真正触发 CHECK。顺带加了 `test_the_status_constant_matches_the_check_constraint`：遍历 `RUN_STATUSES` 把每个值都 flush 一遍。理由是那个常量与 migration 的 CHECK 是**两份字面量**（migration 是历史快照，不引用常量），常量加了新状态而 CHECK 没改的话，那个状态会在 P3b 的执行流里被 DB 拒绝，报错完全不指向这里。
+
+**这个形状值得记**：用超长值测 CHECK 约束会得到一条看起来绿、实际守错东西的测试。
+
+### 偏差 2：`runs.datasource_id` 的 RESTRICT 本来没有守卫
+
+Task 3 Step 9 的反向验证第 2 条（`runs.datasource_id` 改成 `CASCADE`）**按计划该红，实测全绿**。
+
+原因：`make_run` 让 run 与 conversation 用同一个数据源，而 `conversations.datasource_id` **也是** RESTRICT——删数据源时那条外键先拦住了。所以 `test_a_datasource_with_history_cannot_be_deleted` 守的是 conversations 那一列，`runs` 这一列的 RESTRICT 谁都没守。
+
+加了 `test_a_run_pins_its_own_datasource_even_when_the_conversation_points_elsewhere`：让 run 指向另一个数据源，删它时只有 runs 这条外键能拦。加完重跑那条反向验证，从全绿变成红 1 条。
+
+### 偏差 3：计划里一处对 sqlglot 的假设是错的（从实测结论错误推广来的）
+
+计划的 `test_the_dialect_follows_the_datasource_kind` 断言 `limit 3 by x` 在 clickhouse 下合法、**在 postgres 下是 `SQL_PARSE_ERROR`**。实测**这是错的**——三个方言下 sqlglot 都能解析它，都产生带 `expressions` 的 `exp.Limit`：
+
+```
+postgres    根=Select  limit=Limit  expressions=True  ->  SELECT * FROM t LIMIT 3 BY x
+mysql       根=Select  limit=Limit  expressions=True  ->  SELECT * FROM t LIMIT 3 BY x
+clickhouse  根=Select  limit=Limit  expressions=True  ->  SELECT * FROM t LIMIT 3 BY x
+```
+
+这个假设的来源是**把一个实测结论错误地推广了**：写 P3a 设计时实测过 `limit 3 by x limit 5000`（两个 LIMIT）会 `ParseError`，我据此以为 `LIMIT BY` 本身是 ClickHouse 独占语法。**两件事无关。**
+
+两个后果，都已处理：
+
+1. **那条测试改用 ClickHouse 的 `SETTINGS` 子句**。实测 `select * from t settings max_threads = 1` 只有 clickhouse 方言接受，postgres 与 mysql 都是 `ParseError`——这才是真正的方言差异。
+2. **闸 3 的 `LIMIT BY` 分支不是 ClickHouse 独占的**。一条 `limit 3 by x` 发到 Postgres 数据源会被 guard 放过（原样保留 + warning），然后由**库侧**报语法错。这是可接受的反馈路径：P3b 会返回 `QUERY_FAILED` 并带库的原文，用户据此改 SQL——guard 不做语法教师。已写进 `test_a_limit_by_query_carries_a_warning` 的注释。**设计 §2.2 把它称作「ClickHouse 的 `LIMIT n BY x`」，措辞偏窄**，行为上对三个方言一视同仁。
+
+### 偏差 4：一条测试在实现前就是绿的（空洞通过）
+
+`test_the_response_carries_no_credentials` 只做否定断言（「响应里没有密码」）。路由还不存在时 FastAPI 返回 `{"detail": "Not Found"}`，里面当然也没有凭据——**所以它在 Step 3「确认失败」那一步是绿的**，11 条里只有它通过。
+
+补上 `assert response.status_code == 200` 的下限后，11 条全红。
+
+**P2c 的自查记录里记过完全同一个坑**（那次是「两条只做否定断言的测试补了状态码下限」），这次写计划时还是漏了。所以这条留在了测试的文档字符串里，而不只是记在偏差里。
+
+### 反向验证的结果
+
+Task 3 五条、Task 4 四条，全部与计划一致（含偏差 2 那条修正后的）。两处值得记：
+
+- **Task 3 反向 4**（唯一索引去掉 `run_id`）红 2 条而非 1 条：`test_list_events_does_not_leak_another_runs_events` 也建两个 run 各用 `seq=1`，所以它也被破掉。而 `test_the_same_seq_cannot_be_used_twice_for_one_run` **保持绿**——互为对照成立。
+- **Task 4 反向 3、4 如预期全绿**（`max_rows` 写死、`resolver.resolve` 换成 `Policy()`）。这是计划已经写明的两条**无守卫路径**，不是 bug：前者的另一半由 guard 层的 `test_the_cap_comes_from_the_argument_not_from_settings` 守，后者的真正守卫在 P3b（用 `dependency_overrides` 塞返回非空策略的假 resolver）。**没有改测试去凑。**
+
+### 一处操作层面的记录
+
+Task 4 的四条反向验证串在一个 bash 命令里跑，**超过了 8 分钟的命令超时**（每次改完都要跑一次 11 条端点测试，而端点测试要建库夹具）。中断时文件停在反向 3 的修改状态，靠 `/tmp` 里的备份恢复。
+
+**下次把反向验证拆成每次 1–2 条跑**，别串四条。顺带确认了一件事：改的是未提交的新文件时 `git checkout` 救不了（会直接删掉它），所以那个 `cp $R /tmp/xx.bak` 的习惯不能省。
 
 ---
 

@@ -162,7 +162,7 @@ HITL 的本质是链路中间有一段**不确定时长的人类思考**：草�
 | POST | `/api/datasources/{id}/test` | 就地测连，并探测账号是否具备写权限（有则告警，见 §4.3） |
 | GET | `/api/datasources/{id}/schema` | 表结构（走缓存，`?refresh=1` 强制重拉） |
 | PATCH | `/api/datasources/{id}/schema/columns/{col_id}` | 人工补注释（F-201 AC1）。`col_id` = `schema.table.column`，由 `GET /schema` 发出、客户端原样回传；服务端**反查而不解析**（标识符本身可以含点），命中 0 → 404、≥2 → 409 |
-| POST | `/api/sql/validate` | 编辑器停止输入 300ms 后调用，返回 guard 判定 |
+| POST | `/api/datasources/{id}/sql/validate` | 编辑器停止输入 300ms 后调用，返回 guard 判定。**挂在数据源下**（P3a 实施时从 `/api/sql/validate` 改的）：sqlglot 方言由 `kind` 决定，不带数据源只能猜——ClickHouse 的 `SETTINGS` 子句在 postgres/mysql 方言下是 `ParseError`，同一条 SQL 两种判定。判定失败返回 **200 + `ok=false`**，不是 4xx：这个端点每 300ms 被调一次，用 4xx 会让前端把正常输入过程当成错误流 |
 | GET | `/api/conversations` · `/api/runs` | 历史列表（分页、按数据源/状态过滤） |
 | GET | `/api/runs/{id}` | 回放载荷：问题、chips、两版 SQL、结果摘要、事件流 |
 | GET | `/api/runs/{id}/export.csv` | 全量导出，重跑 SQL 并流式写出，不走 100 行预览 |
@@ -229,7 +229,8 @@ run_result_previews(run_id uuid pk fk, columns jsonb, rows jsonb, truncated bool
 
 | 码 | 触发 | 前端表现 |
 |---|---|---|
-| `WRITE_BLOCKED` | AST 命中写操作/DDL/多语句 | 编辑器下方内联说明，运行按钮 disabled |
+| `WRITE_BLOCKED` | AST 命中写操作/DDL | 编辑器下方内联说明，运行按钮 disabled |
+| `MULTIPLE_STATEMENTS` | 一次提交了多条语句 | 同上。P3a 实施时从 `WRITE_BLOCKED` 里分出来：用户动作不同，一个要改掉写操作，一个要删掉分号后面的部分，合成一个码前端只能给一句笼统的话 |
 | `SQL_PARSE_ERROR` | sqlglot 无法解析 | 内联说明 + 报错位置 |
 | `PERMISSION_DENIED` | 无数据源授权，或越权字段 | 「无权限」，不列出哪些表/字段（F-503 AC2） |
 | `CONNECTION_ERROR` | 连不上数据源 | 通用文案，不回显地址端口 |
@@ -302,7 +303,7 @@ apps/web/src/
 - **草稿卡只读留痕**，唯一动作是「载入到编辑器」。编辑器已有脏内容时二次确认「会覆盖你的改动」。
 - **运行按钮全局只有一处**，在编辑器头部。`Ctrl/Cmd+Enter` 是同一个闸门的键盘入口，不是第二条路径。中栏草稿卡上没有运行按钮——F-303 不能有两个守门人。
 - 提交给执行流的永远是**编辑器当前内容**。真相在编辑器，不在草稿。
-- 运行按钮的 disabled 条件：SQL 为空 / 正在执行 / `/api/sql/validate` 判定为写操作。
+- 运行按钮的 disabled 条件：SQL 为空 / 正在执行 / `/api/datasources/{id}/sql/validate` 返回 `ok=false`（写操作、多语句、解析失败任一）。**注意那个端点的失败是 200 + `ok=false`**，不是 4xx——前端别把它当请求错误处理。
 - **写操作拦截用内联说明，不用 toast**——toast 会消失，而这是个需要用户改 SQL 才能解除的阻塞状态，必须留在屏上（Figma §6.1「写操作 → 禁用/拦截提示」）。
 - 下钻（F-401）：点表格维度值或图表元素 → 生成下钻问题 → **回到问答流**产出新草稿（`parent_run_id` 指向来源 run）→ 仍需点运行。下钻不绕闸门（F-401 AC1）。
 
@@ -354,6 +355,16 @@ apps/web/src/
 
 1. **只读账号**。数据源表单明写要求只读账号；`/test` 端点顺带探测写权限，探到就在界面上告警并把 `is_readonly_verified` 置 false（不阻止保存——有些环境拿不到只读账号，但要让用户知道）。
 2. **AST 校验**。sqlglot 解析后只放行 `SELECT` 与 `WITH`，禁多语句、禁 DDL/DML/`COPY`/`GRANT` 等一切非查询语句。**用 AST 而不是正则**——正则挡不住 `SELECT 1; DROP TABLE t`、注释夹带、大小写与空白变形。解析失败即拒绝，不做「看起来像 SELECT 就放过」的兜底。
+
+   **只看根节点是不够的（P3a 实施时实测确认，sqlglot 30.17.0）。** 本条要落成**三道**检查——§5.1 早就点名要测「CTE 里藏 DML、`SELECT ... INTO`」，本节的描述当时漏了这一层：
+
+   | 检查 | 拦什么 | 为什么单独一道 |
+   |---|---|---|
+   | 根节点白名单 + 单语句 | 裸 `INSERT`/`CREATE`/… 与多语句 | 基础。白名单必须**严格**：sqlglot 把不认识的语句兜底成 `exp.Command` 而**不抛 ParseError**（`vacuum` / `call proc()` / `explain` 都是 Command），放行它等于放行一切未知语法 |
+   | 整树扫描写节点 | `WITH x AS (INSERT … RETURNING *) SELECT * FROM x` | 它的根**就是** `Select`，与正常 CTE 无法从根节点区分 |
+   | `into` arg 检查 | `SELECT * INTO new_t FROM t`（会建表） | 根是 `Select`、**树内写节点为空**，前两道全部放行。三个方言下都是这个形状 |
+
+   反向验证实证了两者互不兜底：删整树扫描只红 CTE 那条，删 `into` 检查只红 `SELECT INTO` 那三条。**这也是三道必须分开写而不是合成一个函数的理由**——合成后这种证明做不出来。详见 P3a 设计 §1。
 3. **强制注入 LIMIT**（默认 1000，可配）。已有 LIMIT 且更小则保留原值。注入后的语句就是 `effective_sql`，必须回显给用户（§2.3）。
 4. **语句超时 + 真取消**（默认 60s，可配）。超时与客户端断开都要调驱动的取消能力，见 §2.3。
 
