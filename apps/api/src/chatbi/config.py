@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # 否则契约测要靠改环境变量才能测超时。
     query_timeout_seconds: int = 60
     max_result_rows: int = 1000
+    # 预览上限，与 max_result_rows 是**两个不同的上限**（P3b 设计 §9.1）：
+    #   max_result_rows(1000) 限制从库里取回多少行（闸 3 注入 LIMIT + 驱动 truncate）
+    #   preview_rows(100)     限制存进 run_result_previews 与发给前端多少行
+    # 一次执行可能取回 1000 行而只预览前 100 行，此时 row_count=1000、truncated=False。
+    # 混用这两个数会让「已截断」的含义错掉（上游 spec §2.5、§3.5）。
+    preview_rows: int = 100
 
     @model_validator(mode="after")
     def _resolve_secret_key(self) -> "Settings":
