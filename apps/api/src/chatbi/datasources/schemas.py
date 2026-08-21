@@ -132,3 +132,28 @@ class GrantResponse(BaseModel):
     datasource_id: uuid.UUID
     user_id: uuid.UUID
     can_query: bool
+
+
+class SqlValidateRequest(BaseModel):
+    sql: str = Field(min_length=1, max_length=100_000)
+    """上限 100k 字符：一条人写或 LLM 生成的分析 SQL 远不到这个量级，而没有上限意味着
+    每次按键都可能让服务端解析一个几十 MB 的字符串。"""
+
+
+class SqlValidateResponse(BaseModel):
+    """guard 判定的 HTTP 形态。
+
+    **判定失败也返回 200**，ok=false 在体内——编辑器停止输入 300ms 就调一次
+    （spec §2.4），用 4xx 表达「你这条 SQL 有写操作」会让前端把正常的输入过程当成错误
+    流：用户打字打到一半必然产生大量语法不完整的中间态。401/403/404 仍然是真的 HTTP 错误。
+    """
+
+    ok: bool
+    code: str | None
+    reason: str | None
+    effective_sql: str | None
+    limit_applied: bool
+    """**前端不要靠比较字符串判断 LIMIT 有没有被改**——sqlglot 会重写整条语句（大小写、
+    引号、空白全变），字符串比较必然误报。"""
+
+    warnings: list[str]
