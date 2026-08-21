@@ -17,6 +17,18 @@ from sqlalchemy.orm import Session
 from chatbi.db.models import RunEvent
 
 
+def next_seq(session: Session, run_id: uuid.UUID) -> int:
+    """下一个可用的事件序号。
+
+    **从 max(seq)+1 续，不是从 1 硬起。** 问答流（P3c）会先写 understand / generate 两条
+    事件，执行流必须接在它们后面——硬编码 1 的实现在 P3b 的测试里全绿（那时 run 都是
+    干净的），接上 P3c 之后 `unique (run_id, seq)` 会拒绝重复的 1，而报错会出现在执行流
+    里、看起来像执行流的 bug。
+    """
+    current = session.scalar(sa.select(sa.func.max(RunEvent.seq)).where(RunEvent.run_id == run_id))
+    return (current or 0) + 1
+
+
 def append_event(
     session: Session,
     *,

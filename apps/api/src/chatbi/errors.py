@@ -32,6 +32,20 @@ SQL_PARSE_ERROR = ("SQL_PARSE_ERROR", "SQL 无法解析", 400)
 # 从 WRITE_BLOCKED 里分出来（上游 §2.6 把两者归在一起）：用户动作不同，一个要改掉写
 # 操作，一个要删掉分号后面的部分。合成一个码前端只能给一句笼统的话。
 MULTIPLE_STATEMENTS = ("MULTIPLE_STATEMENTS", "一次只能执行一条语句", 400)
+# 闸 4 与执行流（上游 spec §2.6、§4.3）。前三个只出现在 SSE 的 error 事件载荷里，
+# **不作为 HTTP 状态返回**——流本身已经是 200 了。状态码那一位在这里只用于让 ApiError
+# 元组的形状一致，以及万一将来有非 SSE 的调用方。
+QUERY_TIMEOUT = ("QUERY_TIMEOUT", "查询超时，请缩小时间范围或增加过滤条件", 504)
+# 499 是 nginx 的扩展码而非标准 HTTP，见上：它不会真的被当成状态码发出去
+QUERY_CANCELLED = ("QUERY_CANCELLED", "查询已取消", 499)
+# **message 里会带库的原始错误文本**（由调用方拼）。这与 §4.4「错误消息不含结构信息」
+# 不冲突：那条针对连接类错误（可能含地址端口），而这里的原文是用户自己写的 SQL 在库上
+# 的报错，正是他改 SQL 需要看到的（P2b 的 QueryFailed 刻意保留了原文）。别在某次安全
+# 评审里把它抹掉。
+QUERY_FAILED = ("QUERY_FAILED", "数据库拒绝执行该查询", 400)
+# 一个 run 恰好执行一次（P3b 设计 §5）：非 drafted 一律 409。顺带成为双击运行按钮的防护
+RUN_NOT_EXECUTABLE = ("RUN_NOT_EXECUTABLE", "该查询已执行过或正在执行", 409)
+RUN_NOT_FOUND = ("RUN_NOT_FOUND", "查询记录不存在", 404)
 
 
 class ApiError(Exception):
