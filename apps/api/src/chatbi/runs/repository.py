@@ -14,7 +14,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from chatbi.db.models import RunEvent
+from chatbi.db.models import Run, RunEvent, RunResultPreview
 
 
 def next_seq(session: Session, run_id: uuid.UUID) -> int:
@@ -67,3 +67,82 @@ def list_events(session: Session, run_id: uuid.UUID) -> list[RunEvent]:
     """
     statement = sa.select(RunEvent).where(RunEvent.run_id == run_id).order_by(RunEvent.seq)
     return list(session.scalars(statement))
+
+
+def get_run(session: Session, run_id: uuid.UUID) -> Run | None:
+    return session.get(Run, run_id)
+
+
+def mark_running(
+    session: Session, run_id: uuid.UUID, *, final_sql: str, effective_sql: str
+) -> bool:
+    """drafted -> running。返回 False 表示「它已经不是 drafted 了」（调用方给 409）。
+
+    **带条件的 UPDATE，不是先查状态再改**（P3b 设计 §5.1）：check-then-update 在两个并发
+    请求下会双双通过检查，然后双双执行——而一个 run 只装得下一次执行的结果（final_sql /
+    row_count / executed_at 都是单列），第二次会静默改写第一次的审计记录。P2a 的仓储用
+    insert + IntegrityError 而不是 check-then-insert 是同一条理由。
+
+    顺带：`running` 也不满足条件，所以双击运行按钮的防护是免费得到的。
+    """
+    result = session.execute(
+        sa.update(Run)
+        .where(Run.id == run_id, Run.status == "drafted")
+        .values(
+            status="running",
+            final_sql=final_sql,
+            effective_sql=effective_sql,
+            executed_at=sa.func.now(),
+        )
+    )
+    session.flush()
+    return bool(result.rowcount)
+
+
+def mark_finished(
+    session: Session,
+    run_id: uuid.UUID,
+    *,
+    status: str,
+    row_count: int | None = None,
+    duration_ms: int | None = None,
+    error_code: str | None = None,
+) -> None:
+    """写终态。status ∈ succeeded | failed | cancelled | blocked。
+
+    **不加 `where status = 'running'` 的条件**：blocked 是从 drafted 直接来的（guard 判定
+    不通过，从未 running 过），而 cancelled 可能由 cancel_run 先写过一次。加了条件会让这些
+    路径静默不落库——而失败路径的审计正是 F-304 最需要的（设计 §2.2）。
+    """
+    session.execute(
+        sa.update(Run)
+        .where(Run.id == run_id)
+        .values(status=status, row_count=row_count, duration_ms=duration_ms, error_code=error_code)
+    )
+    session.flush()
+
+
+def save_preview(
+    session: Session,
+    run_id: uuid.UUID,
+    *,
+    columns: list[dict[str, Any]],
+    rows: list[list[Any]],
+    truncated: bool,
+) -> RunResultPreview:
+    """结果摘要，一个 run 一行（run_id 是主键）。
+
+    用 get-then-set 而不是纯 insert：一个 run 只执行一次（设计 §5）所以覆盖路径理论上走
+    不到，但仓储不该因为调用方的约定而在第二次调用时抛 IntegrityError——那种失败会以 500
+    出现在执行流的末尾，把一次**已经成功**的查询变成失败。
+    """
+    preview = session.get(RunResultPreview, run_id)
+    if preview is None:
+        preview = RunResultPreview(run_id=run_id, columns=columns, rows=rows, truncated=truncated)
+        session.add(preview)
+    else:
+        preview.columns = columns
+        preview.rows = rows
+        preview.truncated = truncated
+    session.flush()
+    return preview

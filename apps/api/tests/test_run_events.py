@@ -56,20 +56,42 @@ def test_appending_events_keeps_them_in_seq_order(db_session, run) -> None:
     assert [event.step for event in events] == ["validate", "render", "execute"]
 
 
-def test_the_repository_has_no_update_or_delete_path(db_session, run) -> None:
-    """append-only 的落实方式是**仓储的形状**（设计 §5.2）：模块里不存在 update/delete
-    函数。这条测试防的是「有人为了修一个 bug 顺手加一个 update_event」——那会让 F-304
-    的承诺失效，而没有任何测试会因此变红。
+def test_the_repository_exports_exactly_the_intended_functions(db_session, run) -> None:
+    """append-only 的落实方式是**仓储的形状**（P3a 设计 §5.2）：`run_events` 只有 append 与
+    list，没有 update、没有 delete。
 
-    不加数据库层的触发器：应用账号必须能 INSERT，用触发器禁 UPDATE 会让 migration 的
-    downgrade 变复杂，而收益只是防住故意绕过仓储的人——那种人也能改触发器。
+    **白名单而不是关键词黑名单。** 原先这条测试断言「导出名里不许有 update/delete 字样」，
+    而 p3b1 加的 `mark_running` / `mark_finished` 是 `runs` 的**合法**更新——它们不含那两个
+    词所以恰好没红，这说明黑名单守的东西是模糊的。黑名单还会因为一个叫 `update_run_status`
+    的合法函数而误报，而那时最省事的"修复"是删掉这条测试；白名单在加新函数时会强制实施者
+    回来想一下「这个函数该不该存在」。
+
+    `runs` 与 `run_result_previews` **不是** append-only 的（run 的状态本来就要从 drafted
+    变到终态），所以那四个在白名单里。
     """
-    exported = [name for name in dir(repository) if not name.startswith("_")]
+    expected = {
+        # run_events：只有这三个，永远
+        "append_event",
+        "list_events",
+        "next_seq",
+        # runs 与 run_result_previews：可更新
+        "get_run",
+        "mark_running",
+        "mark_finished",
+        "save_preview",
+    }
+    exported = {
+        name
+        for name in dir(repository)
+        if not name.startswith("_")
+        and callable(getattr(repository, name))
+        and getattr(getattr(repository, name), "__module__", "") == repository.__name__
+    }
 
-    assert "append_event" in exported
-    assert "list_events" in exported
-    forbidden = [name for name in exported if "update" in name or "delete" in name]
-    assert forbidden == []
+    assert exported == expected, (
+        "仓储的导出集变了。加函数前先确认它动的不是 run_events——"
+        "那张表只允许 append 与 list（F-304）"
+    )
 
 
 def test_list_events_does_not_leak_another_runs_events(
