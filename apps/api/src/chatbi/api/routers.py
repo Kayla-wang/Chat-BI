@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from chatbi.api.auth_router import router as auth_router
 from chatbi.api.datasource_router import router as datasource_router
+from chatbi.api.run_router import router as run_router
 from chatbi.api.schema_router import router as schema_router
 from chatbi.api.sql_router import router as sql_router
 from chatbi.api.user_router import router as user_router
@@ -14,6 +15,7 @@ from chatbi.api.user_router import router as user_router
 ALL_ROUTERS: tuple[APIRouter, ...] = (
     auth_router,
     datasource_router,
+    run_router,
     schema_router,
     sql_router,
     user_router,
