@@ -1983,6 +1983,33 @@ task.cancel() 单独就能让流结束。
 
 （开工前为空。每个任务做完就记：实测计数与预期不符的地方、对计划的偏离及理由、反向验证里的意外结果。**特别要记的三处**：Task 1 Step 6 的注册表测试实际几条通过（取决于 `next_seq` 有没有提前实现）· Task 1 Step 7 反向验证 3 预期全绿的确认 · Task 3 Step 8 反向验证 5 加 `wait_for` 之后 `pg_stat_activity` 里的查询有没有残留。**「反向验证全绿」是结论不是噪声**，p3a1/p3a2 各因此补了一条真正有用的测试。）
 
+### Task 3
+
+**计数**：仓储 **17 passed**（计划预期 13——实际多 4 条，实施时把分支拆得比计划细）· 执行器 **11 passed**（与预期一致）· 真库 **3 passed** · 全量 **380 passed / 28 skipped**（skip 全是缺 MySQL / ClickHouse DSN 的驱动契约测，预期状态）。**p3b2 的起点数是 380。**
+
+**偏离 1（改了计划里的一条测试断言）**：Step 6 那条真取消测试，计划写 `pytest.raises(QueryCancelled)`，实际抛的是 `asyncio.CancelledError`，已改成后者。
+
+这不是实现的 bug，是计划与它自己的 `cancel_run` 设计矛盾：`cancel_run` 第 2 步的 `task.cancel()` 与第 1 步之间没有 await，所以外层 task 必然以 `CancelledError` 恢复（`_fut_waiter.cancel()` 与 `_must_cancel` 两条路都是），驱动线程稍后抛的 `QueryCancelled` 到不了 await 处。**这是确定的，不是竞态。** 假驱动那条能看到 `QueryCancelled` 是因为它**刻意绕过 `cancel_run`** 直接调 `driver.cancel`（那条测试的注释写明了）。
+
+没有改实现：`task.cancel()` 是 Task 1 的 `test_cancel_run_cancels_the_driver_first_then_the_task` 明确断言的（`task.cancelled() or task.cancelling() > 0`），且设计 §1.2 给了理由（流不必等驱动异常绕回来）。**「真取消」的证据一点没削弱**——`pg_stat_activity` 归零那条断言原样保留，它才是这条测试的价值所在。
+
+**这条要传给 p3b2**：执行流的 `except` 必须**同时兜** `CancelledError`（取消路径：DELETE 或客户端断开）与 `QueryCancelled`（「查询被别人在库上掐了」）。交接清单里「异常不翻译、`QueryCancelled` 直接抛」只对后一种成立。真驱动确实会在库侧取消时抛 `QueryCancelled`——P2b 的契约测（`tests/drivers/test_driver_contract.py:211`）已覆盖，本份不重复。
+
+**反向验证 1**（`unregister` 从 `finally` 挪到成功路径）：`test_the_registry_is_cleared_on_every_failure_path` **3/4 转红，`[ConnectionFailed]` 保持绿**——计划预期「四条全 FAIL」是高估。那条参数在 register 之前就抛了，本来没东西可清，它验的是「unregister 对未登记的 run 安全」，两种实现都成立。**不改测试**：那条参数守的是别的东西，仍然有价值。额外收获：`test_a_blocked_execution_can_be_cancelled_through_the_registry` 也转红。成功路径那条按预期保持绿——这一对证明了「必须在 finally」不是风格问题。
+
+**反向验证 2**（`register` 移到 `to_thread` 之后）：假驱动的取消那条 + 真库的取消那条**都转红**，与预期一致。
+
+**反向验证 3**（`mark_running` 的 `where` 去掉 `status == "drafted"`）：5 条参数化 + `test_mark_running_uses_a_conditional_update_not_check_then_update` 共 **6 条转红**，与预期一致。
+
+**反向验证 4**（`next_seq` 恒返回 1）：只有 `test_next_seq_continues_after_existing_events` 转红，`test_next_seq_starts_at_one_for_a_fresh_run` 与 `test_next_seq_is_per_run` 保持绿——与预期一致，再次说明只有那一条能分辨这个实现。
+
+**反向验证 5（加 `asyncio.wait_for` 兜底层）—— 两个结果，第二个是实证**：
+
+- 计划预期「真超时那条仍然绿（库侧先掐）」，**实际转红**。`wait_for` 的 2s 与 `statement_timeout` 的 2s 打平时 `wait_for` 赢，抛的是 `TimeoutError` 而不是 `QueryTimeout`——加这一层连错误分类都会被它破坏。
+- 关键的手工观察（一次性探针，跑完已删）：让 `wait_for` 的 2s **明确早于**库侧的 60s，`wait_for` 一定赢。结果——**`wait_for` 抛出后查询仍在库上跑**，`pg_stat_activity` 里那个 pid 上的 `pg_sleep` 立刻查 = 1、3 秒后再查仍 = 1。
+
+这实证了设计 §3 的判断：**asyncio 层的超时停不住 `to_thread` 的线程**，加了它之后的行为是「流提前结束、查询继续跑」，正是闸 4 要防的事。一层停不住东西的超时比没有超时更糟，因为它让人以为有保护。**`executor.py` 里不要加这一层**——将来谁想加，先把这个探针重跑一遍。
+
 ---
 
 ## 交接清单（p3b2 要消费的签名）
@@ -2003,6 +2030,15 @@ await execute_approved(driver, info, *, run_id, effective_sql,
 #   已经是 async 的，内部 to_thread。**异常不翻译**——P2b 的 QueryTimeout /
 #   QueryCancelled / QueryFailed / ConnectionFailed 直接抛出，由 p3b2 映射成错误码
 #   注册表的登记与清理都在里面，p3b2 不用管
+#
+#   **取消路径抛的是 asyncio.CancelledError，不是 QueryCancelled**（实施期实测，见偏差
+#   Task 3 偏离 1）：cancel_run 第 2 步的 task.cancel() 与第 1 步之间没有 await，外层
+#   task 必然以 CancelledError 恢复，驱动稍后抛的 QueryCancelled 到不了 await 处。
+#   所以 p3b2 的执行流要**同时兜两个**，都映射到 QUERY_CANCELLED：
+#     except asyncio.CancelledError -> 点了 DELETE 或客户端断开（正常的取消路径）
+#     except QueryCancelled         -> 查询被别人在库上掐了（pg_cancel_backend 等）
+#   注意 CancelledError 是 BaseException，`except Exception` 兜不住它；且兜住之后
+#   **不要吞掉**——按 asyncio 的约定处理完要么重抛要么让流干净收尾
 
 # 纯函数
 sse.sse(event: str, data: dict) -> bytes
