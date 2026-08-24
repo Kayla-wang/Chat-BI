@@ -1340,6 +1340,62 @@ git commit -m "docs: 回填 P3b 的实施期偏差，并把三处有意偏离同
 
 （开工前为空。**本份必须记的五处**：Task 4 Step 6 的实际条数 · Step 7 反向验证 2（去掉提交点 2）到底哪条红，若全绿则说明 `running` 中间态没有守卫 · Step 7 反向验证 6（`next_seq` 写死 1）的实际表现 · Task 5 Step 2 那条真库测试有没有卡住（TestClient 的 portal 是单线程的）· **Task 5 Step 3 断开真跑的三条实际输出**——那是这条触发器唯一的凭据，它不在回归套件里。）
 
+### Task 4
+
+**计数**：`test_run_router.py` **23 passed**（计划预期 20：15 独立 + 5 参数化；实际多 3 条，见下面反向验证 1、2 与断开那条）· 全量 **405 passed / 28 skipped**。
+
+**偏离 1（计划的假驱动缺一条分支）**：`ConnectionFailed` **不接受消息参数**（P2b 刻意如此：spec §4.4 要求 CONNECTION_ERROR 不回显地址端口，它连一个能塞地址的入口都不给），而计划的假驱动统一写 `raise self._raises("库侧报错…")`，那条参数直接 TypeError。p3b1 的假驱动为它单独开了分支，p3b2 的计划漏了。已按同样形状修，并把「这个区别本身」写进注释。
+
+**偏离 2（照 p3b1 的交接结论改了取消路径的 except）**：`except QueryCancelled` 改成 `except (asyncio.CancelledError, QueryCancelled)`。计划是在 p3b1 实施之前写的，而 p3b1 实测确认经 `cancel_run` 取消时 `execute_approved` 的 await 处抛的是 `CancelledError`。**反向验证过**：只兜 `QueryCancelled` 时真库那条测试的响应体**整条变空**——流中途死掉，连 done 都发不出去，`CancelledError` 是 `BaseException`，`except Exception` 也兜不住。
+
+**偏离 3（`run_router.py` 拆成两个文件，落点与计划不同）**：368 行超了计划的 250 行阈值，按计划拆。但落点用 `api/run_stream.py` 而不是计划写的 `execution/stream.py`：这一层认识 `errors.py` 的错误码元组（里面带 HTTP 状态码）与 SSE 载荷的字段名，都是 HTTP 层的词汇，而 p3b1 的 executor 明确拒绝认识错误码（「在这里翻译会让执行器同时认识 HTTP 层的错误码，而它是领域层」）。放 `api/` 同时满足计划的意图（router 只留鉴权与包装：**96 行**）与那条分层约定。`run_stream.py` 305 行——阈值是给 router 的，且它是一个内聚的生成器，再拆会把四个提交点分到两个文件里。
+
+**反向验证 1（去掉提交点 4）—— 结果与计划预期相反，暴露了一条守不住东西的测试**：计划预期 `test_a_failed_execution_still_records_the_audit_trail` 转红，**实际 20 条全绿**。
+
+查出来的原因（三条，都实测过）：
+
+1. 测试把 `get_db` 覆盖成共享的 `db_session`，而**未提交的写入对它自己的事务本来就可见**。`expire_all()` 只强制重新 SELECT，那次 SELECT 仍在同一个事务里。全局约束里那句「验证审计落库必须在另一个 session 里查（或先 expire_all）」——**后半个括号是不够的**。
+2. 换另一条连接去查也不行：夹具的外层事务从头到尾不提交，另一条连接**什么都看不见**，有没有 commit 都一样。
+3. 计划给的理由（「get_db 在流中途异常时会 ROLLBACK」）在**被 catch 掉的失败路径上根本不成立**：实测 `fastapi 0.141.1` 下带 yield 的依赖，退出代码跑在流**之后**（探针：`dep:enter → stream:chunk1 → stream:chunk2 → dep:exit`），而 QueryTimeout / QueryFailed / ConnectionFailed 都被流自己 catch 了、不抛异常，所以 `get_db` 自己就会 commit。真正会触发回滚的是**客户端断开**——那个 TestClient 造不出来。
+
+处理：**没有删测试也没有放宽断言**。给那条改名副其实的文档字符串（它守的是「写了没有」），另补两条按「写 → commit 的先后顺序」断言的测试（`_spy_actions` 记录 `append_event` / `mark_running` / `commit` / `execute` 的调用顺序）。去掉提交点 4 → 只有 `test_the_failure_path_commits_before_the_stream_ends` 转红；去掉提交点 2 → 只有 `test_every_write_is_committed_before_the_stream_continues` 转红。两条都在文档字符串里写明「为什么只能这么测」。
+
+**反向验证 2（去掉提交点 2）**：与计划预告的一样**全绿**，原因与反向 1 同源。已被上面那条新测试覆盖。
+
+**反向验证 3（去掉端点层的 409 检查）**：5 条参数化全红，**红在 `assert response.status_code == 409`**（流里的 `mark_running` 兜住了执行本身，但那时已经是 200）——与计划预期完全一致。
+
+**反向验证 4（去掉 `run.user_id != user.id`）**：`test_another_users_run_is_404_not_403` 与 `test_delete_on_another_users_run_is_404` 双双转红，与预期一致。
+
+**反向验证 5（去掉 viewer 检查）**：`test_a_viewer_cannot_execute` 转红，实际值是 **200**——viewer 有 grant 就真的能执行了。这实证了「这条不被 can_query 覆盖」。
+
+**反向验证 6（`next_seq` 写死 1）**：是计划猜的第二种——**9 条转红在 `unique (run_id, seq)` 的 IntegrityError**（凡是写第二条事件的路径都 500），不是「全绿」。
+
+### Task 5
+
+**计数**：`test_run_router_real_db.py` **2 passed**，连跑三次都稳（计划担心的 TestClient portal 竞争没有出现，DELETE 从另一个线程发是可行的）。
+
+**Step 1 的一个测试缺陷，被那半句「取消前必须先看到 1」抓出来**：`pg_stat_activity` 的 `query like '%pg_sleep%'` **大小写敏感**，而这条路跑的是 guard 重写过的 `effective_sql`（`SELECT PG_SLEEP(30) LIMIT 1000`），一条都匹配不到。`before` 拿到 0 → 若没有那半句断言，最后那句「取消后必须是 0」会**假绿**。已改 `ilike`。p3b1 同名函数用 `like` 没出问题，因为那条测试直接调执行器、SQL 原样下发。**「先断言它在跑」这半句就是为这种事存在的。**
+
+**Step 3 断开真跑 —— 第一次跑出了一个真实缺陷，不是三条都成立**：
+
+第一次（照计划的实现）：`pg_sleep` 数 = 0 但**审计是 `status = running` / `error_code = None` / 只有 `[(1, validate, ok)]`** —— `cancel_run` 根本没跑。查询消失只是 `pg_sleep(30)` 自己跑完了（两次命令之间有真实墙钟时间）。uvicorn 日志里也没有「客户端断开」那行（另一个原因：app 的 logger 没配 handler，`logger.info` 在这套 uvicorn 配置下不可见，**这是个观测缺口，运维文档要提**）。
+
+装探针查根因（在 `_stream` 的 wait 循环外套 `except BaseException` 写文件）：断开时探针只记到 **`wait:enter` → `raised:CancelledError`**，`request.is_disconnected()` 那一行**一次都没跑**。根因是 Starlette 的 `StreamingResponse` 把 body 迭代器与 `listen_for_disconnect` 放进一个 task group 赛跑，`http.disconnect` 一到就**取消迭代器**。所以计划里那个轮询是**永远不会触发的死代码**——之前「TestClient 下 `is_disconnected` 恒 False」被当成 TestClient 的局限，其实它在哪都不触发。
+
+改成按真机制触发（`except (CancelledError, GeneratorExit)` → 同步调 `cancel_run`），两个额外收获：① 这条触发器**进了回归套件**（`test_cancelling_the_stream_cancels_the_query`：直接取消那个在 `anext` 上等待的 task，异常落点与生产完全同形），设计 §11.3 那条「只能手工验」不再成立，仍在套件外的只剩「Starlette 真的会在 disconnect 时取消迭代器」；② `_stream` 不再需要 `Request` 参数。**`cancel_run` 在那里必须同步调**：生成器处在一个已被取消的 anyio cancel scope 里，任何 `await` 会立刻再抛 `CancelledError`，`GeneratorExit` 下 `await` 更是非法的。代价是阻塞事件循环几毫秒，换查询不继续跑在用户生产库上。
+
+改完后的真跑，三条全部成立（拆分 `run_stream.py` 之后又重跑了一次，仍然成立）：
+
+| 检查项 | 实际输出 |
+|---|---|
+| 断开 2 秒后库里的 `pg_sleep` | **0**（查询才跑了约 3 秒，没被掐必然还在） |
+| run 终态 | `status = cancelled` / `error_code = QUERY_CANCELLED` |
+| 审计事件 | `[(1, 'validate', 'ok'), (2, 'execute', 'cancelled')]` |
+
+**第 3 行是「显式 commit 有用」在生产路径上的直接证据**：生成器被取消 → `get_db` 回滚整个请求的事务 → 这两条事件全靠 `cancel_run` 自己那次 commit 才活下来。反向验证 1 在套件里观察不到的东西，在这里被真跑证明了。
+
+**一条操作教训**：跑测试套件会把 `chatbi_test` 清空（`_migrated` 夹具 `downgrade base`），所以真跑的账号/数据源/run 必须在**不再跑 pytest 之后**建。这次中间跑了一次全量，用户就没了。另外 Git Bash 的 `/tmp` 与 Python 看到的 `/tmp` 不是同一个目录（后者是 `C:\tmp`），探针写文件时踩过一次；以及 `pkill -f uvicorn` 在这台机器上不生效，端口被旧进程占着时新进程只报 `[Errno 10048]` 然后静默退出，**必须用 `netstat -ano | grep LISTENING` 找 PID + `taskkill //PID <pid> //F`**。
+
 ---
 
 ## 交接清单（P3c / P3d 要消费的签名）
@@ -1358,7 +1414,16 @@ require_run(run_id, db, user) -> Run
 # 请求模型（chatbi.runs.schemas）
 ExecuteRequest(sql: str)
 #   P3c 往这里加问答流的请求模型、P3d 加历史与回放的响应模型
-```
+
+# 事件序列（chatbi.api.run_stream）—— 实施期从 run_router 拆出来的
+stream(*, run, db, resolver, sql) -> AsyncIterator[bytes]
+#   async 生成器，四个提交点都在里面。P3c 的问答流可以照它的形状写，但**不要复用它**
+#   （两条流的事件不同）。要复用的是 execution/sse.py 的 sse() 与 _emit 那个「一个写入
+#   点、一个格式」的做法
+#
+#   **P3c 的问答流也要处理「生成器被取消」**：Starlette 在客户端断开时取消 body 迭代器
+#   （实测），所以 SSE 生成器里 CancelledError / GeneratorExit 是正常路径的一部分。
+#   问答流那边要收的尾是「已经写了一半的事件要不要 commit」——按 F-304 应该 commit
 
 **P3c 问答流**
 - 建 run 时 `status='drafted'`，写 `question` / `chips` / `generated_sql` / `llm_provider` / `llm_model`。**`final_sql` 与 `effective_sql` 留空**——那两列由执行流写。
@@ -1374,6 +1439,7 @@ ExecuteRequest(sql: str)
 **运维文档要写的两条**
 1. **注册表是进程内的**：多 worker 部署（`uvicorn --workers N`）下 `DELETE` 会有 (N-1)/N 的概率打到没有那条 run 的进程上，**取消静默失效**。要上多 worker 得先把它换成共享存储。
 2. **SSE 需要反向代理不缓冲**：router 已发 `X-Accel-Buffering: no`，但若用非 nginx 的代理要单独确认，否则事件会攒批、心跳失去意义。
+3. **应用自己的日志目前是不可见的**（实施期发现）：`uvicorn --log-level info` 只配 uvicorn 的 logger，`chatbi.*` 的 `logger.info` 没有 handler，所以「客户端断开，取消 run …」这类行在真跑里一行都看不到（断开真跑时正是这一点让人一开始以为触发器没跑）。取消/超时是运维最需要在日志里看到的事件，**部署前要配一次 logging**（`dictConfig` 或 `--log-config`），否则出问题时手上只有数据库里的审计。
 
 ---
 

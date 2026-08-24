@@ -150,7 +150,13 @@ HITL 的本质是链路中间有一段**不确定时长的人类思考**：草�
 | `error` | `{code, message}` | |
 | `done` | `{status, duration_ms, row_count}` | |
 
+**一个 run 恰好执行一次**（P3b 实施时补）：非 `drafted` 一律 409 `RUN_NOT_EXECUTABLE`，且**在流开始之前判**——一旦开了 SSE 流就只能在流里发 error，那对「你点重复了」是很差的体验。`runs` 的结果字段是单列（`final_sql` / `row_count` / `executed_at`），第二次执行会静默改写第一次的审计记录。「改了 SQL 重跑」= 建**新** run。状态迁移用带条件的 UPDATE（`where status='drafted'`）而不是先查后改：check-then-update 在并发下会双双通过检查。
+
+**执行授权**（P3b 实施时补）：所有者 + 非 `viewer` + 对该数据源有 `can_query`。三条都要查——授权可能在 run 创建**之后**被撤销，而 `viewer` 完全可以有 `can_query` 授权（grants 表不区分角色），漏掉角色那条 viewer 就能执行。**不存在与不属于本人都是 404**，不是 403：run 是**私有**资源，用 403 区分「不存在」与「存在但不是你的」会确认那个 id 存在。这与数据源用 403 有意不同（那是**共享**资源，知道「有它但我没被授权」是去要授权的前提）。**admin 也不例外**——他要停掉一条跑飞的查询，正确的路径是去数据库侧 kill。
+
 **取消**：客户端断开或调 `DELETE /api/runs/{run_id}/execute` → 后端 cancel asyncio task **并调驱动的取消能力**（Postgres `pg_cancel_backend`、MySQL `KILL QUERY`、ClickHouse `KILL QUERY WHERE query_id=`）。只关流不取消后端查询是错的：私有化部署里一条跑飞的查询能拖垮用户的生产库。
+
+两个触发器的机制不同（P3b 实施时实测补）：`DELETE` 是一个并发请求，直接调 `cancel_run()`；**客户端断开则表现为「SSE 生成器自己被取消」**——Starlette 的 `StreamingResponse` 把 body 迭代器与 `listen_for_disconnect` 放在一个 task group 里赛跑，`http.disconnect` 一到就取消迭代器。所以断开检测**不能**写成在心跳间隙轮询 `request.is_disconnected()`：那一行永远不会被执行到（真 uvicorn 上装探针实测确认）。正确的写法是 `except (CancelledError, GeneratorExit)` 里调 `cancel_run()`，且那里**必须同步调**——生成器正处在一个已被取消的 cancel scope 里，任何 `await` 会立刻再抛 `CancelledError`。
 
 ### 2.4 REST 端点
 
@@ -217,6 +223,10 @@ run_events(id bigserial pk, run_id uuid fk, seq int, step text, status text,
 
 run_result_previews(run_id uuid pk fk, columns jsonb, rows jsonb, truncated bool)
 -- 只存前 100 行摘要，不存全量快照；回放时重跑取全量
+-- P3b 实施时补：100（preview_rows）与闸 3 注入的 1000（max_result_rows）是**两个不同的
+-- 上限**，前者限制存进这张表与发给前端的行数，后者限制从库里取回多少行。而 truncated
+-- 指的是**驱动那一层是否截断**（库里其实有 >1000 行），不是「预览是否截断」——混用会让
+-- 一次返回 200 行的查询显示「已截断」
 ```
 
 `demo_sales` schema 与应用表同库不同 schema，由一个独立 migration 建表灌数；注册成一个名为「示例销售库」的数据源由 CLI `seed-demo` 完成，**不由 migration 自动做**。
@@ -235,7 +245,11 @@ run_result_previews(run_id uuid pk fk, columns jsonb, rows jsonb, truncated bool
 | `PERMISSION_DENIED` | 无数据源授权，或越权字段 | 「无权限」，不列出哪些表/字段（F-503 AC2） |
 | `CONNECTION_ERROR` | 连不上数据源 | 通用文案，不回显地址端口 |
 | `QUERY_TIMEOUT` | 超过语句超时 | 提示当前超时值与「缩小时间范围」建议 |
-| `QUERY_CANCELLED` | 用户取消 | 中性提示 |
+| `QUERY_CANCELLED` | 用户取消（点了取消，或客户端断开） | 中性提示 |
+| `QUERY_FAILED` | 库拒绝执行该查询 | 内联说明 + **库的原始报错原文**。P3b 实施时补：它与超时/取消/连不上都不同，用户要靠库的报错去改自己刚写的 SQL。这与 §4.4 不冲突——那条针对连接类错误（可能含地址端口），这里的原文是用户自己的 SQL 在库上的报错 |
+| `RUN_NOT_EXECUTABLE` | 对一条非 `drafted` 的 run 发起执行 | 409。一个 run 恰好执行一次（见 §2.3），顺带是双击运行按钮的防护 |
+
+**`QUERY_TIMEOUT` / `QUERY_CANCELLED` / `QUERY_FAILED` 只出现在执行流 SSE 的 `error` 事件载荷里，不作为 HTTP 状态返回**（P3b 实施时补）——流一开就已经是 200 了。`errors.py` 里给它们配的状态码只为了让错误码元组形状一致（`QUERY_CANCELLED` 的 499 还是 nginx 的扩展码而非标准 HTTP）。
 | `LLM_TIMEOUT` / `LLM_UNAVAILABLE` | LLM 超时或不可达 | 提示可重试；不影响已有草稿 |
 | `DATASOURCE_NOT_FOUND` / `RUN_NOT_FOUND` | 引用不存在 | 通用 404 文案 |
 
