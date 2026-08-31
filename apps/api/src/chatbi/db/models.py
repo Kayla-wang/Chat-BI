@@ -10,9 +10,10 @@ from chatbi.db.base import Base
 
 ROLES: tuple[str, str, str] = ("admin", "analyst", "viewer")
 DATASOURCE_KINDS: tuple[str, str, str] = ("postgres", "mysql", "clickhouse")
-# 与 migration 0005 的 ck_runs_status 一致（那边是字面量，migration 是历史快照）。
+# 与 migration 0006 的 ck_runs_status 一致（那边是字面量，migration 是历史快照）。
 # 两者一致由 tests/test_run_models.py 钉住。
 RUN_STATUSES: tuple[str, ...] = (
+    "generating",  # 草稿正在生成（P3c）。放第一个：它是 run 的起点状态
     "drafted",
     "blocked",
     "running",

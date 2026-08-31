@@ -47,6 +47,15 @@ QUERY_FAILED = ("QUERY_FAILED", "数据库拒绝执行该查询", 400)
 RUN_NOT_EXECUTABLE = ("RUN_NOT_EXECUTABLE", "该查询已执行过或正在执行", 409)
 RUN_NOT_FOUND = ("RUN_NOT_FOUND", "查询记录不存在", 404)
 
+# 问答流（上游 spec §2.6 列了前两个，第三个是 P3c 新增）。三个都**只出现在 SSE 的
+# error 事件载荷里**，不作为 HTTP 状态返回——流已经是 200 了。状态码那一位只用于让
+# ApiError 元组形状一致（与闸 4 那批同一条约定，见上）。
+LLM_TIMEOUT = ("LLM_TIMEOUT", "模型响应超时，请重试", 504)
+LLM_UNAVAILABLE = ("LLM_UNAVAILABLE", "模型服务不可用，请检查推理服务是否已启动", 503)
+# **不要挪用 LLM_UNAVAILABLE 表示这件事**（P3c 设计 §9.2）：「数据源还没拉过表结构」
+# 与模型无关，用 LLM 的码会让用户去查 Ollama 而问题在数据源页。文案要能指路。
+SCHEMA_UNAVAILABLE = ("SCHEMA_UNAVAILABLE", "该数据源尚未拉取表结构，请先在数据源页刷新", 409)
+
 
 class ApiError(Exception):
     def __init__(self, code: str, message: str, status_code: int) -> None:

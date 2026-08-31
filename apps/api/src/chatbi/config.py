@@ -28,6 +28,25 @@ class Settings(BaseSettings):
     # 一次执行可能取回 1000 行而只预览前 100 行，此时 row_count=1000、truncated=False。
     # 混用这两个数会让「已截断」的含义错掉（上游 spec §2.5、§3.5）。
     preview_rows: int = 100
+    # ---- LLM（P3c 设计 §3.5、§5.2）----
+    llm_provider: str = "ollama"
+    llm_model: str = "qwen3:8b"
+    llm_base_url: str = "http://127.0.0.1:11434"
+    # **两个超时不是一个**（设计 §3.2）：上游 spec §4.5 的单一 30s 已被实测推翻。
+    #   首 token 迟迟不来 = 模型在加载或服务不可达。本机冷启动含模型加载实测 36s，
+    #     而模型被换出内存后还会再发生，所以给 60s。
+    #   首 token 来了之后 = 模型在正常吐字只是慢（实测 4.1 tok/s），这时要管的是
+    #     「别无限吐下去」（进入重复循环时会一直生成），180s 约容得下 700 token。
+    # 单一超时无论取什么值都同时对这两件事说话：30s 则冷启动必然误报，180s 则
+    # 「服务根本没起来」也要等 3 分钟才告诉用户。
+    llm_first_token_timeout: float = 60.0
+    llm_total_timeout: float = 180.0
+    # 让模型常驻内存，避免 36s 冷启动反复落在用户头上。内存紧张的部署要能调小，
+    # 所以它是配置而不是硬编码。
+    llm_keep_alive: str = "30m"
+    # prompt 的 token 预算（设计 §5.2）。超了就砍表，**并在 warnings 里写明砍了几张**
+    # ——静默截断的表现是「SQL 是垃圾但没人知道为什么」。
+    llm_prompt_token_budget: int = 6000
 
     @model_validator(mode="after")
     def _resolve_secret_key(self) -> "Settings":

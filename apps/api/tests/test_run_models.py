@@ -161,7 +161,7 @@ def test_an_unknown_run_status_is_rejected(db_session, make_run) -> None:
 
 
 def test_the_status_constant_matches_the_check_constraint(db_session, make_run) -> None:
-    """RUN_STATUSES 与 migration 0005 的 ck_runs_status 是两份字面量（migration 是历史
+    """RUN_STATUSES 与 migration 0006 的 ck_runs_status 是两份字面量（migration 是历史
     快照，不引用常量）。这条把两者钉在一起——常量加了新状态但 CHECK 没改的话，那个状态
     在生产上会被 DB 拒绝，而错误出现在 P3b 的执行流里，完全不指向这里。
     """
@@ -172,7 +172,7 @@ def test_the_status_constant_matches_the_check_constraint(db_session, make_run) 
         run.status = status
         db_session.flush()  # 每一个都必须被 CHECK 接受
 
-    assert len(RUN_STATUSES) == 6
+    assert len(RUN_STATUSES) == 7
 
 
 def test_the_same_seq_cannot_be_used_twice_for_one_run(db_session, make_run) -> None:
