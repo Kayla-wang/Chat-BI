@@ -23,7 +23,12 @@ def get_provider(settings: Settings) -> LLMProvider:
         from chatbi.llm.fake import FakeLLMProvider
 
         return FakeLLMProvider(model=settings.llm_model)
-    # Task 3 在这里加 ollama 分支。**在那之前默认配置会走到下面那行 ValueError**，
-    # 这是有意的：本份分任务提交，一个只认识 fake 的注册表比一个 import 不存在模块的
-    # 注册表更容易定位问题。
+    if settings.llm_provider == "ollama":
+        from chatbi.llm.ollama import OllamaProvider
+
+        return OllamaProvider(
+            base_url=settings.llm_base_url,
+            model=settings.llm_model,
+            keep_alive=settings.llm_keep_alive,
+        )
     raise ValueError(f"未知的 LLM provider：{settings.llm_provider}")
