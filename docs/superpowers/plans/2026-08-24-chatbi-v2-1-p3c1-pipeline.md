@@ -33,6 +33,8 @@
 
 ## 本机环境
 
+> ⚠️ **2026-08-31 实测：这一整节已失效，照抄会连不上库。** 本机只剩 PostgreSQL **18.6 / 5433**（不是 16 / 5432），且要额外导出 `CHATBI_TEST_PG_DSN` 才有 405 的基线。正确的四个变量见下方「实施期的偏差」§0——**p3c2 / p3c3 开工前先读那一节**。
+
 ```bash
 # apps/api 下，每个任务开工前 export 这三个
 export TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi_test
@@ -103,7 +105,7 @@ export CHATBI_SECRET_KEY=dev-only-not-for-production
          / llm_total_timeout / llm_keep_alive / llm_prompt_token_budget
   ```
 
-- [ ] **Step 1: 改那条一致性测试，让它先红**
+- [x] **Step 1: 改那条一致性测试，让它先红**
 
 `tests/test_run_models.py` 里 `test_the_status_constant_matches_the_check_constraint` 的最后一行：
 
@@ -127,7 +129,7 @@ RUN_STATUSES: tuple[str, ...] = (
 
 **先改常量再改 migration 是有意的顺序**：这样那条一致性测试会以「DB 拒绝了 `generating`」的形式失败，而那正是它存在的理由（常量加了新状态但 CHECK 没改，错误会出现在别处）。
 
-- [ ] **Step 2: 跑测试确认它红**
+- [x] **Step 2: 跑测试确认它红**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_run_models.py -q
@@ -135,7 +137,7 @@ RUN_STATUSES: tuple[str, ...] = (
 
 预期：`test_the_status_constant_matches_the_check_constraint` FAIL，报 `IntegrityError` 提到 `ck_runs_status`。**不是 AssertionError**——如果是 AssertionError（`== 7` 没过），说明常量没改成功。
 
-- [ ] **Step 3: 写 migration 0006**
+- [x] **Step 3: 写 migration 0006**
 
 `apps/api/migrations/versions/0006_run_generating.py`：
 
@@ -184,7 +186,7 @@ def downgrade() -> None:
 
 `downgrade` 里那条 `update` 不是可选的：**`downgrade base` 是测试夹具每次都跑的路径**，留着 `generating` 的行会让下一次 `pytest` 在建约束时炸掉，而报错出现在夹具里、看起来与本次改动无关（p2c1 踩过同形的坑：改 `upgrade`/`downgrade` 不对称会把测试库弄坏）。
 
-- [ ] **Step 4: 跑测试确认转绿**
+- [x] **Step 4: 跑测试确认转绿**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_run_models.py -q
@@ -192,7 +194,7 @@ def downgrade() -> None:
 
 预期：全绿。夹具会先 `downgrade base` 再 `upgrade head`，所以 0006 会被真的跑一遍。
 
-- [ ] **Step 5: 加三个错误码**
+- [x] **Step 5: 加三个错误码**
 
 `src/chatbi/errors.py` 末尾（`RUN_NOT_FOUND` 之后）：
 
@@ -209,7 +211,7 @@ SCHEMA_UNAVAILABLE = ("SCHEMA_UNAVAILABLE", "该数据源尚未拉取表结构�
 
 `LLM_TIMEOUT` 的 `message` 由调用方拼得更具体（「模型未在 60 秒内响应」vs「生成超过 180 秒已中止」，见 Task 3）——运维要靠那句话判断是服务没起来还是模型跑飞了。
 
-- [ ] **Step 6: 加七个配置项**
+- [x] **Step 6: 加七个配置项**
 
 `src/chatbi/config.py` 的 `Settings` 里，`preview_rows` 之后：
 
@@ -235,7 +237,7 @@ SCHEMA_UNAVAILABLE = ("SCHEMA_UNAVAILABLE", "该数据源尚未拉取表结构�
     llm_prompt_token_budget: int = 6000
 ```
 
-- [ ] **Step 7: 加一条配置测试**
+- [x] **Step 7: 加一条配置测试**
 
 `tests/test_config.py` 加：
 
@@ -270,7 +272,7 @@ def test_the_llm_defaults_match_the_measured_numbers() -> None:
 
 `CHATBI_SECRET_KEY` 必须设（或作为构造参数传）：`Settings` 有个 `model_validator` 在缺主密钥时抛 `ValueError`，不设它这条测试会以一个跟 LLM 无关的错误失败。
 
-- [ ] **Step 8: 跑测试 + ruff + 提交**
+- [x] **Step 8: 跑测试 + ruff + 提交**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_config.py tests/test_run_models.py -q
@@ -321,7 +323,7 @@ SCHEMA_UNAVAILABLE 是新码：数据源没拉过表结构与模型无关，挪�
   llm.registry.get_provider(settings) -> LLMProvider
   ```
 
-- [ ] **Step 1: 写 `llm/base.py`**
+- [x] **Step 1: 写 `llm/base.py`**
 
 ```python
 """LLMProvider 协议与它的三个失败。
@@ -409,7 +411,7 @@ class LLMProvider(Protocol):
         ...
 ```
 
-- [ ] **Step 2: 写 `llm/fake.py`**
+- [x] **Step 2: 写 `llm/fake.py`**
 
 ```python
 """确定性的假 provider。**自动化测试一律用它**（上游 spec §5.1）。
@@ -471,7 +473,7 @@ class FakeLLMProvider:
 
 **`calls` 这个计数器是本份一条约束的守卫**：全流程只调一次 LLM（见 Global Constraints）。Task 8 有一条测试断言 `== 1`。
 
-- [ ] **Step 3: 写 `llm/registry.py`**
+- [x] **Step 3: 写 `llm/registry.py`**
 
 ```python
 """name → provider。与 datasources/registry.py 同形（惰性 import）。
@@ -505,7 +507,7 @@ def get_provider(settings: Settings) -> LLMProvider:
     raise ValueError(f"未知的 LLM provider：{settings.llm_provider}")
 ```
 
-- [ ] **Step 4: 写测试**
+- [x] **Step 4: 写测试**
 
 `tests/test_llm_fake_and_registry.py`：
 
@@ -611,7 +613,7 @@ def test_an_unknown_provider_is_a_clear_error() -> None:
 
 **给四条 async 测试各加 `@pytest.mark.asyncio`，不要用模块级 `pytestmark`**：这个文件里有四条同步测试，模块级标记会把它们也标成 async，而 pytest-asyncio 对同步函数带 asyncio 标记会警告或报错（取决于 `asyncio_mode`）。`tests/test_executor.py`（p3b1）就是逐条加装饰器的，跟着它走。
 
-- [ ] **Step 5: 跑测试**
+- [x] **Step 5: 跑测试**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_llm_fake_and_registry.py -q
@@ -619,14 +621,14 @@ def test_an_unknown_provider_is_a_clear_error() -> None:
 
 预期 **8 passed**。
 
-- [ ] **Step 6: 反向验证两条（每次只改一处，跑完立刻恢复）**
+- [x] **Step 6: 反向验证两条（每次只改一处，跑完立刻恢复）**
 
 **先 `cp` 备份要改的文件** —— 改未提交的新文件时 `git checkout` 救不了（它会把文件删掉）。
 
 1. **`FakeLLMProvider.stream` 里的 `self.calls += 1` 删掉** → `test_the_fake_yields_its_chunks_in_order` FAIL。这条确认那个计数器**真的在数**：它是 Task 8「只调一次 LLM」那条约束的唯一守卫，如果它自己不准，那条约束就没有守卫。
 2. **`raises_after` 改成在 `for` 循环之前抛** → `test_the_fake_can_fail_after_some_chunks` FAIL 在 `seen == [...]` 那句，而 `test_the_fake_can_fail_before_the_first_chunk` **保持绿**。这一对区分了两种超时路径——它们在设计 §9.3 里的处理方式不同（一个有半截稿要留在编辑器里，一个什么都没有）。
 
-- [ ] **Step 7: ruff + 提交**
+- [x] **Step 7: ruff + 提交**
 
 ```bash
 .venv/Scripts/python.exe -m ruff format src/chatbi/ tests/ && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .
@@ -670,7 +672,7 @@ import 不存在模块的注册表更容易定位问题。openai_compatible.py �
 
 **本任务不连真 Ollama。** 用 `httpx.MockTransport` 造响应：那是唯一能确定性地测「首 token 迟到」与「吐到一半超时」的办法。真跑是 p3c3 的退出标准。
 
-- [ ] **Step 1: 写 `llm/ollama.py`**
+- [x] **Step 1: 写 `llm/ollama.py`**
 
 ```python
 """Ollama 的 /api/generate 流式调用（P3c 设计 §3.3）。
@@ -809,7 +811,7 @@ def _parse_line(line: str) -> tuple[str, bool]:
 
 `import asyncio` 放在函数里是为了让文件头那句「只 import 标准库与 httpx」成立时也不显得突兀——**实际上应该提到模块顶部**，实施时按 ruff 的意见办（`PLC0415` 若启用会要求提上去）。**先写在顶部**，这条注释只是解释为什么你会在别处看到函数内 import。
 
-- [ ] **Step 2: 把 ollama 加进注册表**
+- [x] **Step 2: 把 ollama 加进注册表**
 
 `src/chatbi/llm/registry.py` 里，`fake` 分支之后、`raise ValueError` 之前：
 
@@ -826,7 +828,7 @@ def _parse_line(line: str) -> tuple[str, bool]:
 
 同时把 Task 2 留在那里的「Task 3 在这里加 ollama 分支」那条注释删掉。
 
-- [ ] **Step 3: 写测试**
+- [x] **Step 3: 写测试**
 
 `tests/test_llm_ollama.py`：
 
@@ -985,7 +987,7 @@ def test_ollama_is_the_default_provider() -> None:
 
 **`httpx.Response(200, content=<async generator>)` 是 MockTransport 里造流式响应的办法**：httpx 接受异步可迭代对象作为 content。若这个版本的 httpx 不接受（实测一下），退路是 `httpx.Response(200, stream=httpx.AsyncByteStream(...))` 的自定义子类——**先按上面写，跑不通再换，并把实际用法记进偏差**。
 
-- [ ] **Step 4: 跑测试**
+- [x] **Step 4: 跑测试**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_llm_ollama.py -q
@@ -993,13 +995,13 @@ def test_ollama_is_the_default_provider() -> None:
 
 预期 **9 passed**，总耗时几百毫秒（两条超时测试各用 0.05–0.2 秒的超时值，**不要用真实的 60/180**）。
 
-- [ ] **Step 5: 反向验证三条（每次只改一处，跑完立刻恢复）**
+- [x] **Step 5: 反向验证三条（每次只改一处，跑完立刻恢复）**
 
 1. **把两个超时合成一个**（`asyncio.timeout(total_timeout)` 包住整个 while 循环，抛 `LLMTimeout("total", ...)`） → `test_a_slow_first_token_raises_the_first_token_kind` FAIL（kind 是 total），而 `test_a_runaway_generation_raises_the_total_kind` **保持绿**。**这一对就是设计 §3.2 的实证**：合成之后「服务没起来」与「模型跑飞」变得无法区分，而合成的实现在一半测试上仍然是绿的。
 2. **`except httpx.HTTPError` 那段改成 `raise`（直接把原始异常往上抛）** → 两条 `does_not_leak_the_address` 里的连接那条 FAIL。这条钉住 spec §4.4——httpx 的异常 str 里带 url。
 3. **`_parse_line` 的 `except json.JSONDecodeError` 删掉** → `test_a_malformed_line_is_skipped_not_fatal` FAIL，其余全绿。确认那条容错真的在起作用而不是碰巧。
 
-- [ ] **Step 6: ruff + 提交**
+- [x] **Step 6: ruff + 提交**
 
 ```bash
 .venv/Scripts/python.exe -m ruff format src/chatbi/ tests/ && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .
@@ -1044,7 +1046,7 @@ httpx 的异常与错误响应体都不往上带：前者的 str 里有 url，�
 
 **这个任务是「一次 LLM 调用」那个决定的落地**（设计 §2.1）。它必须毫秒级返回——`understand` 事件要在用户按下回车后立刻发出去，那 20 秒的空白正是它要填的。
 
-- [ ] **Step 1: 写时间词的失败测试**
+- [x] **Step 1: 写时间词的失败测试**
 
 `tests/test_pipeline_chips.py`（先只写时间那部分）：
 
@@ -1126,7 +1128,7 @@ def test_last_month_handles_year_and_leap_boundaries(today, start, end) -> None:
     assert (actual_start, actual_end) == (start, end)
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_pipeline_chips.py -q
@@ -1134,7 +1136,7 @@ def test_last_month_handles_year_and_leap_boundaries(today, start, end) -> None:
 
 预期：全部 ERROR（`ModuleNotFoundError: chatbi.pipeline.chips`）。
 
-- [ ] **Step 3: 写时间词解析**
+- [x] **Step 3: 写时间词解析**
 
 `src/chatbi/pipeline/chips.py`（先写时间那半）：
 
@@ -1218,7 +1220,7 @@ def resolve_time_phrase(question: str, *, today: date) -> tuple[str, date, date]
 
 `_months_back(quarter_start, -2)` 是「往后两个月」，用来取季度末——**负数参数是有意的**，`_months_back` 的实现天然支持它（整数月运算）。若觉得难读，实施时可以加一个 `_months_forward`，但**不要改成 `+timedelta(days=90)`**：那在跨月长度不同时会错。
 
-- [ ] **Step 4: 跑测试确认时间那部分转绿**
+- [x] **Step 4: 跑测试确认时间那部分转绿**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_pipeline_chips.py -q
@@ -1226,7 +1228,7 @@ def resolve_time_phrase(question: str, *, today: date) -> tuple[str, date, date]
 
 预期 **19 passed**（15 条参数化 + label + None + 3 条边界）。**若「本季度」那条红**，先核对 `_month_end(_months_back(quarter_start, -2))` 的语义再改测试——2026-08-24 在 Q3（7–9 月），所以是 7/1–9/30。
 
-- [ ] **Step 5: 写表列匹配的失败测试**
+- [x] **Step 5: 写表列匹配的失败测试**
 
 同一个测试文件追加：
 
@@ -1335,7 +1337,7 @@ def test_at_most_eight_chips_but_all_tables_stay_resolved() -> None:
     assert len(result.resolved_tables) == 10
 ```
 
-- [ ] **Step 6: 写表列匹配**
+- [x] **Step 6: 写表列匹配**
 
 `chips.py` 追加：
 
@@ -1439,7 +1441,7 @@ def match_chips(
 
 **`resolved_tables` 在 `chips` 被截断后仍然完整**——这一条有专门的测试（Step 5 最后一条）。它防的是「界面放不下」这个显示问题去污染「模型能看见什么」这个语义问题。
 
-- [ ] **Step 7: 跑测试**
+- [x] **Step 7: 跑测试**
 
 ```bash
 .venv/Scripts/python.exe -m pytest tests/test_pipeline_chips.py -q
@@ -1447,13 +1449,13 @@ def match_chips(
 
 预期 **26 passed**（19 + 7）。
 
-- [ ] **Step 8: 反向验证三条（每次只改一处，跑完立刻恢复）**
+- [x] **Step 8: 反向验证三条（每次只改一处，跑完立刻恢复）**
 
 1. **`_MIN_ASCII_LEN` 改成 1** → `test_short_identifiers_do_not_match` FAIL，其余全绿。确认那条限制真的在起作用。
 2. **`chips = (...)[:_MAX_CHIPS]` 那行改成同时截断 `resolved`（`tuple(resolved)[:_MAX_CHIPS]`）** → `test_at_most_eight_chips_but_all_tables_stay_resolved` FAIL 在 `len(...) == 10`。**这一条是本任务最重要的反向验证**：它钉住「显示上限不许影响模型能看见什么」，而这个错误在小库上永远不会暴露（10 张表以下两者相同）。
 3. **时间词表里「上个月」与「上月」调换顺序** → **预期全绿**（两者区间相同，只有 label 不同，而参数化测试没有断言 label）。**这是一个结论**：说明「顺序敏感」那条注释目前没有守卫。如实记进偏差，并补一条断言 `resolve_time_phrase("上个月", ...)` 的 label 是「上个月」的测试——`test_the_label_keeps_the_original_words` 已经覆盖了这一点，所以**先跑一次确认它是否真的转红**，若真红则第 3 条不是全绿，把实际结果记下来。
 
-- [ ] **Step 9: ruff + 提交**
+- [x] **Step 9: ruff + 提交**
 
 ```bash
 .venv/Scripts/python.exe -m ruff format src/chatbi/ tests/ && .venv/Scripts/python.exe -m ruff check . && .venv/Scripts/python.exe -m ruff format --check .
@@ -1480,7 +1482,62 @@ resolved_tables 不受 chips 显示上限影响：截断它会让模型看不见
 
 ## 实施期的偏差（执行中回填）
 
-（开工前为空。每个任务做完就记：实测计数与预期不符的地方、对计划的偏离及理由、反向验证里的意外结果。**本份特别要记的四处**：Task 1 全量的实际数 · Task 3 Step 3 那个 `httpx.Response(content=<async generator>)` 在本机 httpx 版本上到底能不能用（跑不通时换了什么写法）· Task 3 反向验证 1「两个超时合成一个」的实际红绿分布 · Task 4 反向验证 3「时间词表调换顺序」到底是全绿还是红了一条。**「反向验证全绿」是结论不是噪声**，p3a1/p3a2/p3b1/p3b2 各因此补了一条真正有用的测试。）
+2026-08-31 / 09-01 实施。Task 1–4 全部完成并提交（`3e81c41` / `53e07b1` / `f0d3d00` / `700139a`），收尾 **453 passed / 28 skipped**。
+
+### 0. 开工前的环境阻塞（本份最大的意外，与代码无关）
+
+「本机环境」那一节整节失效：**原生 PG 16 / 5432 已经不存在**，本机只剩 **PostgreSQL 18.6 监听 5433**（`C:\Program Files\PostgreSQL\18\data\postgresql.conf` 里 `port = 5433`），且是全新安装——`chatbi` 角色与 `chatbi` / `chatbi_test` 两个库都不存在。`pg_hba.conf` 全是 `scram-sha-256`，所以只能拿到超级用户口令后新建（用户提供 `postgres`/`postgres`，角色只给 LOGIN、不给 CREATEROLE，刻意与旧实例保持一致好让计数可比）。
+
+失败形态值得记：`tests/conftest.py:38` 的 `_migrated` 是 `scope="session", autouse=True`，库连不上时**全部 433 条测试 ERROR**，连 `tests/test_config.py` 这种纯单元文件也不例外，报错是 `subprocess.CalledProcessError: 'uv run alembic downgrade base'`，**完全不指向「端口错了」**；且每次要等连接超时，全量跑一遍要 282 秒（修好后 63–77 秒）。
+
+**还有一个文档从来没写的环境变量**：少导 `CHATBI_TEST_PG_DSN`，`tests/drivers/` 的 14 条 postgres 契约测会静默 skip，读数变成 **391 passed / 42 skipped**——与本计划记的 405 / 28 差 14，那个差值不是回归。四个变量的完整写法：
+
+```bash
+export TEST_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi_test
+export CHATBI_DATABASE_URL=postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi
+export CHATBI_SECRET_KEY=dev-only-not-for-production
+export CHATBI_TEST_PG_DSN=postgres://chatbi:chatbi@127.0.0.1:5433/chatbi_test
+```
+
+`src/chatbi/config.py` 的默认 `database_url` **仍指着 5432，本份没改**：P1 计划第 55 行明确写了「默认贴合本机、P2 起靠环境变量覆盖」，改默认值等于改那个决定，不该在一个做 LLM 层的任务里顺手做。后果是直接 `uvicorn` 起服务会连不上，得带环境变量。**p3c3 要真跑 Ollama 端到端时会撞上这条**，那时一并决定。
+
+### 1. 计数：计划里有三处算错，实际读数都更多
+
+| 位置 | 计划预期 | 实际 | 说明 |
+|---|---|---|---|
+| Task 1 Step 8 全量 | 407 / 28 | **407 / 28** | 一致 |
+| Task 2 Step 5 | 8 passed | **8** | 一致 |
+| Task 3 Step 4 | 9 passed | **8** | 该文件只有 8 个 test 函数，计划多数了一个 |
+| Task 4 Step 4 | 19 passed | **20** | 15 参数化 + label + None + 3 边界 = 20 |
+| Task 4 Step 7 | 26 passed | **27** | 20 + 7 |
+| Task 4 收尾 | — | **30** | 27 + 新补的 3 条参数化（见 §3） |
+| 全量收尾 | — | **453 / 28** | 405 + 2 + 8 + 8 + 30 |
+
+### 2. Task 3 的两处实测结论
+
+**`httpx.Response(200, content=<async generator>)` 在本机 httpx 上直接可用**，八条测试一次全绿，**不需要**计划 Step 3 末尾预留的 `AsyncByteStream` 子类退路。
+
+**反向验证 1「两个超时合成一个」的实际红绿分布与预期一致，但失败形态更强。** 红绿：`1 failed / 7 passed`，红的是 `test_a_slow_first_token_raises_the_first_token_kind`，`test_a_runaway_generation_raises_the_total_kind` **保持绿**——这正是设计 §3.2 的实证（合成后一半测试仍然是绿的）。但失败**不是**计划预期的「kind 报成 total」，而是 **`Failed: DID NOT RAISE LLMTimeout`**：合成实现用单一 `total_timeout=5.0` 包住整个循环，而测试里首片段 1.0 秒就到了，所以根本没触发超时。这比计划预期的结论更强——单一超时不只是把两种失败**贴错标签**，而是在「首 token 迟到但仍在总预算内」这一整类情况下**完全检测不到**，与 §3.2 那句「30s 则冷启动必然误报、180s 则服务没起来也要等 3 分钟」是同一件事的两面。
+
+### 3. Task 4 反向验证 3：全绿，且查明了机制——计划的注释是错的
+
+调换「上个月」与「上月」两行，**27 条全绿**，与计划怀疑的一致。机制查清了：`'上月' in '上个月'` 是 **False**（中文子串要连续，「上个月」中间隔着「个」），而且**整张表里没有任何一个 label 是另一个的子串**（穷举 11 个 label 两两验证，结果空集）。所以计划里那句「顺序敏感：否则「上个月」会被「上月」的子串匹配切成错的 label」**在前提上就不成立**，调换任意两行都不会改变单个时间词的解析结果。
+
+顺着查下去发现**第二处不成立的说法**：`resolve_time_phrase` 的 docstring 说「一句话里出现两个时间词时取靠前的那个」，实现取的是 **table 里靠前的那行，不是句子里靠前的那个词**。实测 `今年和上个月` → `上个月`、`本月和昨天` → `昨天`，两例都与句序相反。计划举的例子「上个月和今年」两条规则恰好给出同一答案，所以没暴露。
+
+处理方式（按 Global Constraints「不要改测试去凑」）：**行为保持计划原样**（表顺序优先，确定性且能穷举测），只把两处注释改成实际成立的说法，并补一条**真正有守卫作用**的测试 `test_the_earlier_table_entry_wins_not_the_earlier_word`（3 条参数化）。它守的是表顺序决定的**优先级**——在此之前那条优先级一条守卫都没有。为确认它不是又一条空守卫，专门验了两次：调换「上个月」/「本月」仍全绿（两者在任何用例里不共现），把「本月」提到表首则**红在 `本月和昨天` 那条**，确认它真的在守。钉住它的理由是**用户看到的 chip label 由它决定**：机器按「上个月」算而用户以为按「今年」算，数字对不上时没人会想到是这里。
+
+### 4. Task 4 的一处计划缺口（Step 1 与 Step 4 冲突）
+
+Step 1 的测试文件同时 `import match_chips, resolve_time_phrase`，而 Step 3 只实现 `resolve_time_phrase`，所以 Step 4 按原样跑不出「时间那部分转绿」，只会得到 `ImportError: cannot import name 'match_chips'`（collection 就中断，一条都跑不了）。处理：Step 4 期间临时把 import 收窄成只导 `resolve_time_phrase`，拿到 20 passed 的检查点，Step 5 追加表列测试时再恢复完整 import。**p3c2 写测试先行的任务时要注意这个形状**：分两步实现的模块，第一步的测试文件不能 import 第二步才有的名字。
+
+### 5. 其余小偏离（都不改行为）
+
+- `db/models.py` 与 `tests/test_run_models.py` 的注释里「migration 0005」改成 0006——约束现在住在 0006，留着旧号会让下一个人去 0005 里找一个已经不在那儿的字面量。
+- `_next_month` 从计划的单行三元表达式改成 `if` 两句：原式 100 字符超行宽，`ruff format` 会拆得很难读。
+- `resolve_time_phrase` 里把 `week_start` 与 `last_month_start` 提成局部变量（计划在 table 里重复了四次同一表达式），语义完全一致。
+- 反向验证一律先 `cp` 到 `/tmp` 再改、跑完立刻 `cp` 回来并复跑确认恢复到绿——新文件未提交时 `git checkout` 会把文件删掉，这条计划提醒过，实测确实需要。
+- Task 4 的 `_TODAY` 是固定日期，所以实施跨了 08-31→09-01 的午夜**一条测试都没受影响**——这就是「today 是显式参数」买到的东西。
 
 ---
 
