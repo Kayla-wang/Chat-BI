@@ -18,7 +18,7 @@ def _test_env() -> None:
         pytest.fail(
             "TEST_DATABASE_URL 未设置。应用库测试不允许 skip——没有应用库这个后端无功能可测。\n"
             "  export TEST_DATABASE_URL="
-            "postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi_test",
+            "postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi_test",
             pytrace=False,
         )
     db_name = url.rsplit("/", 1)[-1].split("?")[0]

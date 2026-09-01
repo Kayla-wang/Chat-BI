@@ -10,7 +10,10 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CHATBI_", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://chatbi:chatbi@localhost:5432/chatbi"
+    # 端口 5433 是本机原生实例的实际监听端口（PostgreSQL 18，2026-08-31 起）。
+    # 不是 PG 的协议默认 5432——那个默认值仍在 drivers/postgres.py 的 default_port 里，
+    # 用于用户自己配的数据源，两者不要混。
+    database_url: str = "postgresql+psycopg://chatbi:chatbi@localhost:5433/chatbi"
     secret_key: SecretStr | None = None
     secret_key_file: Path | None = None
     # 默认失败即安全：生产环境必须带 Secure。本地 HTTP 开发通过
